@@ -1,0 +1,4 @@
+.*
+/*.code-workspace
+!.gitattributes
+!.gitignore
