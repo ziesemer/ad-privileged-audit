@@ -111,7 +111,9 @@ function Invoke-Reports(){
 	$commonAdProps = 'Name', 'Enabled',
 		@{key='lastLogonTimestampDate'; generated=$true}, 'lastLogonTimestamp',
 		'PasswordLastSet', 'whenCreated', 'whenChanged',
-		'DisplayName', 'DistinguishedName', 'UserPrincipalName', 'SamAccountName', 'ObjectClass', 'ObjectGUID', 'ObjectSID'
+		'DisplayName', 'DistinguishedName', 'UserPrincipalName', 'SamAccountName', 'ObjectClass', 
+		'Description',
+		'ObjectGUID', 'ObjectSID'
 
 	$commonAdPropsIn = $commonAdProps | ForEach-Object{
 		if($_ -is [string]){
