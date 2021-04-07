@@ -263,12 +263,12 @@ function Invoke-Reports(){
 		| Select-Object -Property $commonAdPropsOut `
 		| Out-Reports -ctx $out -name 'staleComps' -title 'Stale Computers'
 
-	# Computers that haven't recently checked-in to LAPS...
+	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
 	$admPwdAttr = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext -Filter {name -eq 'ms-Mcs-AdmPwd'}
 	if($admPwdAttr){
 		Get-ADComputer -Filter {
-					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $filterDate)
+					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
 				} `
 				-Properties ($commonAdPropsIn + 'ms-Mcs-AdmPwdExpirationTime') `
 			| Convert-Timestamps -dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime' `
