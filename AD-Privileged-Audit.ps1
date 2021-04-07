@@ -97,12 +97,23 @@ function Out-Reports{
 		Write-Log "Processing $title ($name)..."
 	}
 	End{
-		$ctx.reports.$name = $results
-		$results | Export-Csv -NoTypeInformation -Path $ExecutionContext.InvokeCommand.ExpandString($ctx.filePattern)
-		$caption = "  $title ($name): $($results.Count)"
+		$caption = "  $title ($name): "
+		if($results){
+			$caption += $results.Count
+		}else{
+			$caption += 0
+		}
 		Write-Log $caption
-		if($results -and $interactive){
-			$results | Out-GridView -Title $caption
+		$ctx.reports.$name = $results
+		$path = $ExecutionContext.InvokeCommand.ExpandString($ctx.filePattern)
+		if($results){
+			$results | Export-Csv -NoTypeInformation -Path $path
+			if($interactive){
+				$results | Out-GridView -Title $caption
+			}
+		}else{
+			# Write (or overwrite) an empty file.
+			[void][System.IO.FileStream]::new($path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
 		}
 	}
 }
