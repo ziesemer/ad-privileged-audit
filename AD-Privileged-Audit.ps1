@@ -86,7 +86,7 @@ function Out-Reports{
 	[CmdletBinding()]
 	param(
 		[Parameter(Mandatory, ValueFromPipeline)]
-		[object[]]$results,
+		[PSCustomObject]$inputResults,
 		[Parameter(Mandatory)]
 		$ctx,
 		[Parameter(Mandatory)]
@@ -95,8 +95,13 @@ function Out-Reports{
 	)
 	Begin{
 		Write-Log "Processing $title ($name)..."
+		$results = New-Object System.Collections.ArrayList
+	}
+	Process{
+		[void]$results.Add([PSCustomObject]$inputResults)
 	}
 	End{
+		$results = $results.ToArray()
 		$caption = "  $title ($name): "
 		if($results){
 			$caption += $results.Count
