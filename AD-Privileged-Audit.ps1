@@ -116,7 +116,7 @@ function Invoke-Reports(){
 
 	if(!$reportsFolder){
 		$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-		$reportsFolder = "$desktopPath\AD-Reports"
+		$reportsFolder = Join-Path $desktopPath 'AD-Reports'
 	}
 	$out.params.reportsFolder = $reportsFolder
 	Write-Log "`$reportsFolder: $($reportsFolder)"
