@@ -285,7 +285,11 @@ try{
 			-Verb RunAs
 	}
 }catch{
-	Write-Log 'Error:', $_
-	$_ | Format-List -Force
-	Pause
+	Write-Log 'Error:', $_ -Severity ERROR
+	if($interactive){
+		$_ | Format-List -Force
+		Pause
+	}else{
+		throw $_
+	}
 }
