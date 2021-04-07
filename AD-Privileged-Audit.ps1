@@ -122,22 +122,23 @@ function Invoke-Reports(){
 	Write-Log "`$reportsFolder: $($reportsFolder)"
 	[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
 
-	$now = $out.params.now = Get-Date
-	Write-Log "`$now: $now"
-	$filterDate = $out.params.filterDate = $now.AddDays(-90)
-	Write-Log "`$filterDate: $filterDate"
-	$filterDatePassword = $out.params.filterDatePassword = $now.AddDays(-365)
-	Write-Log "`$filterDatePassword: $filterDatePassword"
-
-	$filePattern = $out.filePattern = Join-Path $reportsFolder `
-		('$($name)-' + $(Get-Date -Date $now -Format 'yyyy-MM-dd') + '.csv')
-	Write-Log "`$filePattern: $filePattern"
-
+	# This doesn't affect Out-GridView, which falls back to the current user preferences in Windows.
 	$currentThread = [System.Threading.Thread]::CurrentThread
 	$culture = [CultureInfo]::InvariantCulture.Clone()
 	$culture.DateTimeFormat.ShortDatePattern = 'yyyy-MM-dd'
 	$currentThread.CurrentCulture = $culture
 	$currentThread.CurrentUICulture = $culture
+
+	$now = $out.params.now = Get-Date
+	Write-Log ('$now: {0}' -f $now)
+	$filterDate = $out.params.filterDate = $now.AddDays(-90)
+	Write-Log ('$filterDate: {0}' -f $filterDate)
+	$filterDatePassword = $out.params.filterDatePassword = $now.AddDays(-365)
+	Write-Log ('$filterDatePassword: {0}' -f $filterDatePassword)
+
+	$filePattern = $out.filePattern = Join-Path $reportsFolder `
+		('$($name)-' + $(Get-Date -Date $now -Format 'yyyy-MM-dd') + '.csv')
+	Write-Log "`$filePattern: $filePattern"
 
 	$commonAdProps = 'Name', 'Enabled',
 		@{key='lastLogonTimestampDate'; generated=$true}, 'lastLogonTimestamp',
