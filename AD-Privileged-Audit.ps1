@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -Modules ActiveDirectory
 
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-06
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-07
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
@@ -272,13 +272,21 @@ function Invoke-Reports(){
 
 	$admPwdAttr = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext -Filter {name -eq 'ms-Mcs-AdmPwd'}
 	if($admPwdAttr){
-		Get-ADComputer -Filter {
-					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
-				} `
+		function Invoke-LAPSReport($filter){
+			Get-ADComputer -Filter $filter `
 				-Properties ($commonAdPropsIn + 'ms-Mcs-AdmPwdExpirationTime') `
 			| Convert-Timestamps -dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime' `
-			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $commonAdPropsOut) `
-			| Out-Reports -ctx $out -name 'noLAPS' -title 'Computers without LAPS'
+			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $commonAdPropsOut)
+		}
+	
+		Invoke-LAPSReport {
+					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
+				} `
+			| Out-Reports -ctx $out -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
+		Invoke-LAPSReport {
+					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
+				} `
+			| Out-Reports -ctx $out -name 'LAPS-In' -title 'Computers with current LAPS.'
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
