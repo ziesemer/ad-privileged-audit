@@ -119,8 +119,10 @@ function Invoke-Reports(){
 		$reportsFolder = Join-Path $desktopPath 'AD-Reports'
 	}
 	$out.params.reportsFolder = $reportsFolder
-	Write-Log "`$reportsFolder: $($reportsFolder)"
+	Write-Log ('$reportsFolder: {0}' -f $reportsFolder)
 	[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
+
+	$domain = $out.params.domain = Get-ADDomain
 
 	# This doesn't affect Out-GridView, which falls back to the current user preferences in Windows.
 	$currentThread = [System.Threading.Thread]::CurrentThread
@@ -137,8 +139,11 @@ function Invoke-Reports(){
 	Write-Log ('$filterDatePassword: {0}' -f $filterDatePassword)
 
 	$filePattern = $out.filePattern = Join-Path $reportsFolder `
-		('$($name)-' + $(Get-Date -Date $now -Format 'yyyy-MM-dd') + '.csv')
-	Write-Log "`$filePattern: $filePattern"
+		($domain.DNSRoot +
+			'-$($name)-' +
+			$(Get-Date -Date $now -Format 'yyyy-MM-dd') +
+			'.csv')
+	Write-Log ('$filePattern: {0}' -f $filePattern)
 
 	$commonAdProps = 'Name', 'Enabled',
 		@{key='lastLogonTimestampDate'; generated=$true}, 'lastLogonTimestamp',
