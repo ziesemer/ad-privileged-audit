@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -Modules ActiveDirectory
 
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-07
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-09
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
@@ -164,9 +164,9 @@ function Invoke-Reports(){
 	$commonAdProps = 'Name', 'Enabled',
 		@{key='lastLogonTimestampDate'; generated=$true}, 'lastLogonTimestamp',
 		'PasswordLastSet', 'whenCreated', 'whenChanged',
-		'DisplayName', 'DistinguishedName', 'UserPrincipalName', 'SamAccountName', 'ObjectClass', 
+		'DisplayName', 'DistinguishedName', 'UserPrincipalName', 'sAMAccountName', 'ObjectClass', 
 		'Description',
-		'ObjectGUID', 'ObjectSID'
+		'ObjectGUID', 'objectSid'
 
 	$commonAdPropsIn = $commonAdProps | ForEach-Object{
 		if($_ -is [string]){
