@@ -125,12 +125,7 @@ function Out-ADReports{
 
 function Invoke-ADPrivGroups(){
 	$groups = @()
-	$groupAdProps = 'objectSid', 'Name',
-		'whenCreated', 'whenChanged',
-		'DisplayName', 'DistinguishedName', 'sAMAccountName', 'ObjectClass', 
-		'Description', 'ObjectGUID',
-		'GroupCategory', 'GroupScope', 'groupType',
-		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
+	$groupAdProps = Get-ADProps 'group'
 
 	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
 	('Domain Admins', 'Administrators', 'Schema Admins', 'Enterprise Admins',
@@ -164,21 +159,21 @@ function Invoke-ADPrivGroups(){
 				}
 			}})
 
-			$ado = $gm | & $getCmd -Properties $commonAdPropsIn
+			$ado = $gm | & $getCmd -Properties $userAdPropsIn
 
 			$x = [ordered]@{
 				GroupSid = $group.objectSid
 				GroupName = $group.Name
 			}
 
-			$commonAdPropsIn | ForEach-Object {
+			$userAdPropsIn | ForEach-Object {
 				$x.$_ = $ado.$_
 			}
 
 			[PSCustomObject]$x
 		}
 	} | Convert-Timestamps `
-		| Select-Object -Property (@('GroupSid', 'GroupName') + $commonAdPropsOut) `
+		| Select-Object -Property (@('GroupSid', 'GroupName') + $userAdPropsOut) `
 		| Out-ADReports -ctx $out -name 'privGroupMembers' -title 'Privileged AD Group Members'
 
 	$groups | Select-Object -Property $groupAdProps `
@@ -223,27 +218,58 @@ function Invoke-Reports(){
 			'.csv')
 	Write-Log ('$filePattern: {0}' -f $filePattern)
 
-	$commonAdProps = 'Name', 'Enabled',
-		@{key='lastLogonTimestampDate'; generated=$true}, 'lastLogonTimestamp',
-		'PasswordLastSet', 'whenCreated', 'whenChanged',
-		'DisplayName', 'DistinguishedName', 'UserPrincipalName', 'sAMAccountName', 'ObjectClass', 
-		'Description',
-		'ObjectGUID', 'objectSid'
+	$commonAdProps = 'objectSid', 'Name',
+		@{type='class'; class='user', 'computer'; props=
+			'Enabled',
+			@{type='generated'; props='lastLogonTimestampDate'}, 'lastLogonTimestamp',
+			'PasswordLastSet', 'PasswordNeverExpires', 'CannotChangePassword'
+		},
+		'whenCreated', 'whenChanged',
+		'DistinguishedName', 'sAMAccountName', 
+		'DisplayName', 'Description',
+		@{type='class'; class='user'; props=
+			'UserPrincipalName', 'Company', 'Title', 'Department', 'EmployeeID', 'EmployeeNumber'},
+		@{type='class'; class='group'; props=
+			'GroupCategory', 'GroupScope', 'groupType'},
+		'ObjectClass', 'ObjectGUID',
+		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
-	$commonAdPropsIn = $commonAdProps | ForEach-Object{
-		if($_ -is [string]){
-			$_
-		}elseif(!$_.generated -eq $true){
-			$_.key
+	function Get-ADProps([string]$class, [switch]$generated){
+		$props = New-Object System.Collections.ArrayList
+		function Expand-ADProp($p){
+			if($p -is [string]){
+				[void]$props.Add($p)
+			}elseif($p -is [array]){
+				$p | ForEach-Object{
+					Expand-ADProp $_
+				}
+			}else{
+				switch($p.type){
+					'class'{
+						if($class -in $p.class){
+							Expand-ADProp $p.props
+						}
+					}
+					'generated'{
+						if($generated){
+							Expand-ADProp $p.props
+						}
+					}
+					default{
+						throw "Unhandled property type: $($p.type)"
+					}
+				}
+			}
 		}
+
+		Expand-ADProp $commonAdProps
+		return $props
 	}
-	$commonAdPropsOut = $commonAdProps | ForEach-Object{
-		if($_ -is [string]){
-			$_
-		}elseif($_.generated -eq $true){
-			$_.key
-		}
-	}
+
+	$userAdPropsIn = Get-ADProps 'user'
+	$userAdPropsOut = Get-ADProps 'user' -generated
+	$compAdPropsIn = Get-ADProps 'computer'
+	$compAdPropsOut = Get-ADProps 'computer' -generated
 
 	# Privileged AD Groups and Members...
 
@@ -255,10 +281,10 @@ function Invoke-Reports(){
 			-Filter {
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
-			-Properties $commonAdPropsIn `
+			-Properties $userAdPropsIn `
 		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
-		| Select-Object -Property $commonAdPropsOut `
+		| Select-Object -Property $userAdPropsOut `
 		| Out-ADReports -ctx $out -name 'staleUsers' -title 'Stale Users'
 
 	# Users with passwords older than # days...
@@ -267,10 +293,10 @@ function Invoke-Reports(){
 			-Filter {
 				Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
 			} `
-			-Properties $commonAdPropsIn `
+			-Properties $userAdPropsIn `
 		| Convert-Timestamps `
 		| Sort-Object -Property PasswordLastSet `
-		| Select-Object -Property $commonAdPropsOut `
+		| Select-Object -Property $userAdPropsOut `
 		| Out-ADReports -ctx $out -name 'stalePasswords' -title 'Stale Passwords'
 
 	# Computers that haven't logged-in within # days...
@@ -279,10 +305,10 @@ function Invoke-Reports(){
 			-Filter {
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
-			-Properties $commonAdPropsIn `
+			-Properties $compAdPropsIn `
 		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
-		| Select-Object -Property $commonAdPropsOut `
+		| Select-Object -Property $compAdPropsOut `
 		| Out-ADReports -ctx $out -name 'staleComps' -title 'Stale Computers'
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
@@ -291,9 +317,9 @@ function Invoke-Reports(){
 	if($admPwdAttr){
 		function Invoke-LAPSReport($filter){
 			Get-ADComputer -Filter $filter `
-				-Properties ($commonAdPropsIn + 'ms-Mcs-AdmPwdExpirationTime') `
+				-Properties ($compAdPropsIn + 'ms-Mcs-AdmPwdExpirationTime') `
 			| Convert-Timestamps -dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime' `
-			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $commonAdPropsOut)
+			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $compAdPropsOut)
 		}
 	
 		Invoke-LAPSReport {
