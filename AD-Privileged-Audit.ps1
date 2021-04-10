@@ -210,8 +210,6 @@ function Invoke-Reports(){
 	Write-Log ('$reportsFolder: {0}' -f $reportsFolder)
 	[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
 
-	$domain = $out.params.domain = Get-ADDomain
-
 	# This doesn't affect Out-GridView, which falls back to the current user preferences in Windows.
 	$currentThread = [System.Threading.Thread]::CurrentThread
 	$culture = [CultureInfo]::InvariantCulture.Clone()
@@ -226,11 +224,28 @@ function Invoke-Reports(){
 	$filterDatePassword = $out.params.filterDatePassword = $now.AddDays(-365)
 	Write-Log ('$filterDatePassword: {0}' -f $filterDatePassword)
 
+	$domain = $out.params.domain = Get-ADDomain
+
 	$filePattern = $out.filePattern = Join-Path $reportsFolder `
 		($domain.DNSRoot +
 			'{0}-' +
 			$(Get-Date -Date $now -Format 'yyyy-MM-dd'))
 	Write-Log ('$filePattern: {0}' -f $filePattern)
+
+	Write-Log 'Checking for execution as Domain Administrator...'
+
+	$domainAdminsSid = [System.Security.Principal.SecurityIdentifier]::new(
+		[System.Security.Principal.WellKnownSidType]::AccountDomainAdminsSid,
+		$domain.DomainSID
+	)
+	$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+	$windowsPrincipal = New-Object System.Security.Principal.WindowsPrincipal($currentUser)
+	if($windowsPrincipal.IsInRole($domainAdminsSid)){
+		Write-Log "  Running as Domain Admin: $domainAdminsSid"
+	}else{
+		Write-Log ("Current user ($($currentUser.Name)) is not running as a Domain Administrator." +
+			'  Results may be incomplete!') -Severity WARN
+	}
 
 	$commonAdProps = 'objectSid', 'Name',
 		@{type='class'; class='user', 'computer'; props=
