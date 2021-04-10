@@ -123,6 +123,68 @@ function Out-Reports{
 	}
 }
 
+function Invoke-ADPrivGroups(){
+	$groups = @()
+	$groupAdProps = 'objectSid', 'Name',
+		'whenCreated', 'whenChanged',
+		'DisplayName', 'DistinguishedName', 'sAMAccountName', 'ObjectClass', 
+		'Description', 'ObjectGUID',
+		'GroupCategory', 'GroupScope', 'groupType',
+		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
+
+	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
+	('Domain Admins', 'Administrators', 'Schema Admins', 'Enterprise Admins',
+			'Account Operators', 'Backup Operators', 'Server Operators',
+			'DnsAdmins', 'DHCP Administrators', 'Domain Controllers'
+			) | ForEach-Object{
+		$groupName = $_
+
+		Write-Log "  - Processing group: $($groupName)..."
+
+		try{
+			$group = Get-ADGroup -Identity $groupName -Properties $groupAdProps
+			$groups += $group
+		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
+			Write-Log $_ -Severity WARN
+		}
+
+		$group | Get-ADGroupMember -Recursive -PipelineVariable gm | ForEach-Object{
+			$getCmd = (&{switch($gm.objectClass){
+				'user'{
+					'Get-ADUser'
+				}
+				'computer'{
+					'Get-ADComputer'
+				}
+				'group'{
+					# Ignore, handled by -Recursive above.
+				}
+				default{
+					throw "Unhandled group member type: $gm.objectClass"
+				}
+			}})
+
+			$ado = $gm | & $getCmd -Properties $commonAdPropsIn
+
+			$x = [ordered]@{
+				GroupSid = $group.objectSid
+				GroupName = $group.Name
+			}
+
+			$commonAdPropsIn | ForEach-Object {
+				$x.$_ = $ado.$_
+			}
+
+			[PSCustomObject]$x
+		}
+	} | Convert-Timestamps `
+		| Select-Object -Property (@('GroupSid', 'GroupName') + $commonAdPropsOut) `
+		| Out-Reports -ctx $out -name 'privGroupMembers' -title 'Privileged AD Group Members'
+
+	$groups | Select-Object -Property $groupAdProps `
+		| Out-Reports -ctx $out -name 'privGroups' -title 'Privileged AD Groups'
+}
+
 function Invoke-Reports(){
 	$out = [ordered]@{
 		params = [ordered]@{}
@@ -183,54 +245,9 @@ function Invoke-Reports(){
 		}
 	}
 
-	# Privileged AD Group Members...
+	# Privileged AD Groups and Members...
 
-	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
-	('Domain Admins', 'Administrators', 'Schema Admins', 'Enterprise Admins',
-			'Account Operators', 'Backup Operators', 'Server Operators',
-			'DnsAdmins', 'DHCP Administrators', 'Domain Controllers'
-			) | ForEach-Object{
-		$groupName = $_
-
-		Write-Log "  - Processing group: $($groupName)..."
-
-		try{
-			$group = Get-ADGroup -Identity $groupName
-		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
-			Write-Log $_ -Severity WARN
-		}
-
-		$group | Get-ADGroupMember -Recursive -PipelineVariable gm | ForEach-Object{
-			$getCmd = (&{switch($gm.objectClass){
-				'user'{
-					'Get-ADUser'
-				}
-				'computer'{
-					'Get-ADComputer'
-				}
-				'group'{
-					# Ignore, handled by -Recursive above.
-				}
-				default{
-					throw "Unhandled group member type: $gm.objectClass"
-				}
-			}})
-
-			$ado = $gm | & $getCmd -Properties $commonAdPropsIn
-
-			$x = [Ordered]@{
-				Group = $group.DistinguishedName
-			}
-
-			$commonAdPropsIn | ForEach-Object {
-				$x.$_ = $ado.$_
-			}
-
-			[PSCustomObject]$x
-		}
-	} | Convert-Timestamps `
-		| Select-Object -Property @(,'Group' + $commonAdPropsOut) `
-		| Out-Reports -ctx $out -name 'privGroupMembers' -title 'Privileged AD Group Members'
+	Invoke-ADPrivGroups
 
 	# Users that haven't logged-in within # days...
 
