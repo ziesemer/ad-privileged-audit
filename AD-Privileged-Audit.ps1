@@ -6,9 +6,19 @@
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
 	#   such as filters around enabled status on AD objects.
-	[switch]$elevated = $false,
-	[switch]$batch = $false,
-	[IO.FileInfo]$reportsFolder = $null
+	[Parameter(ParameterSetName="notElevated")]
+	[switch]$notElevated,
+
+	[Parameter(ParameterSetName="elevated", Mandatory=$true)]
+	[switch]$elevated,
+	[Parameter(ParameterSetName="elevated")]
+	[switch]$batch,
+	[Parameter(ParameterSetName="elevated")]
+	[IO.FileInfo]$reportsFolder = $null,
+	[Parameter(ParameterSetName="elevated")]
+	[switch]$noFiles,
+	[Parameter(ParameterSetName="elevated")]
+	[switch]$noZip
 )
 
 Set-StrictMode -Version Latest
@@ -110,15 +120,19 @@ function Out-ADReports{
 		}
 		Write-Log $caption
 		$ctx.reports.$name = $results
-		$path = $ExecutionContext.InvokeCommand.ExpandString($ctx.filePattern)
+		$path = ($ctx.filePattern -f ('-' + $name)) + '.csv'
 		if($results){
-			$results | Export-Csv -NoTypeInformation -Path $path
+			if(!$noFiles){
+				$results | Export-Csv -NoTypeInformation -Path $path
+				$ctx.reportFiles += $path
+			}
 			if($interactive){
 				$results | Out-GridView -Title $caption
 			}
-		}else{
+		}elseif(!$noFiles){
 			# Write (or overwrite) an empty file.
 			[void][System.IO.FileStream]::new($path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+			$ctx.reportFiles += $path
 		}
 	}
 }
@@ -184,6 +198,7 @@ function Invoke-Reports(){
 	$out = [ordered]@{
 		params = [ordered]@{}
 		reports = [ordered]@{}
+		reportFiles = @()
 		filePattern = $null
 	}
 
@@ -213,9 +228,8 @@ function Invoke-Reports(){
 
 	$filePattern = $out.filePattern = Join-Path $reportsFolder `
 		($domain.DNSRoot +
-			'-$($name)-' +
-			$(Get-Date -Date $now -Format 'yyyy-MM-dd') +
-			'.csv')
+			'{0}-' +
+			$(Get-Date -Date $now -Format 'yyyy-MM-dd'))
 	Write-Log ('$filePattern: {0}' -f $filePattern)
 
 	$commonAdProps = 'objectSid', 'Name',
@@ -332,6 +346,11 @@ function Invoke-Reports(){
 			| Out-ADReports -ctx $out -name 'LAPS-In' -title 'Computers with current LAPS.'
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
+	}
+
+	if(!($noFiles -or $noZip)){
+		Write-Log 'Creating compressed archive...'
+		Compress-Archive -Path $out.reportFiles -DestinationPath ($filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
 	return [PSCustomObject]$out
