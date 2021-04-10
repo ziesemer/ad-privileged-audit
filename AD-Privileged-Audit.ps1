@@ -82,7 +82,7 @@ function Convert-Timestamps{
 	}
 }
 
-function Out-Reports{
+function Out-ADReports{
 	[CmdletBinding()]
 	param(
 		[Parameter(Mandatory, ValueFromPipeline)]
@@ -179,10 +179,10 @@ function Invoke-ADPrivGroups(){
 		}
 	} | Convert-Timestamps `
 		| Select-Object -Property (@('GroupSid', 'GroupName') + $commonAdPropsOut) `
-		| Out-Reports -ctx $out -name 'privGroupMembers' -title 'Privileged AD Group Members'
+		| Out-ADReports -ctx $out -name 'privGroupMembers' -title 'Privileged AD Group Members'
 
 	$groups | Select-Object -Property $groupAdProps `
-		| Out-Reports -ctx $out -name 'privGroups' -title 'Privileged AD Groups'
+		| Out-ADReports -ctx $out -name 'privGroups' -title 'Privileged AD Groups'
 }
 
 function Invoke-Reports(){
@@ -259,7 +259,7 @@ function Invoke-Reports(){
 		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
 		| Select-Object -Property $commonAdPropsOut `
-		| Out-Reports -ctx $out -name 'staleUsers' -title 'Stale Users'
+		| Out-ADReports -ctx $out -name 'staleUsers' -title 'Stale Users'
 
 	# Users with passwords older than # days...
 
@@ -271,7 +271,7 @@ function Invoke-Reports(){
 		| Convert-Timestamps `
 		| Sort-Object -Property PasswordLastSet `
 		| Select-Object -Property $commonAdPropsOut `
-		| Out-Reports -ctx $out -name 'stalePasswords' -title 'Stale Passwords'
+		| Out-ADReports -ctx $out -name 'stalePasswords' -title 'Stale Passwords'
 
 	# Computers that haven't logged-in within # days...
 
@@ -283,7 +283,7 @@ function Invoke-Reports(){
 		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
 		| Select-Object -Property $commonAdPropsOut `
-		| Out-Reports -ctx $out -name 'staleComps' -title 'Stale Computers'
+		| Out-ADReports -ctx $out -name 'staleComps' -title 'Stale Computers'
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
@@ -299,11 +299,11 @@ function Invoke-Reports(){
 		Invoke-LAPSReport {
 					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
 				} `
-			| Out-Reports -ctx $out -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
+			| Out-ADReports -ctx $out -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
 		Invoke-LAPSReport {
 					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
 				} `
-			| Out-Reports -ctx $out -name 'LAPS-In' -title 'Computers with current LAPS.'
+			| Out-ADReports -ctx $out -name 'LAPS-In' -title 'Computers with current LAPS.'
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
