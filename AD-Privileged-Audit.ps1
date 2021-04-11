@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -Modules ActiveDirectory
 
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-09
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-11
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
@@ -25,6 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
+$version = '2021-04-11'
 $interactive = !$batch
 
 function Write-Log{
@@ -196,11 +197,18 @@ function Invoke-ADPrivGroups(){
 
 function Invoke-Reports(){
 	$out = [ordered]@{
-		params = [ordered]@{}
+		params = [ordered]@{
+			version = $version
+			currentUser = $null
+			hostName = [System.Net.Dns]::GetHostName()
+			domain = $null
+		}
 		reports = [ordered]@{}
 		reportFiles = @()
 		filePattern = $null
 	}
+
+	Write-Log ('Version: ' + $version)
 
 	if(!$reportsFolder){
 		$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
@@ -238,14 +246,20 @@ function Invoke-Reports(){
 		[System.Security.Principal.WellKnownSidType]::AccountDomainAdminsSid,
 		$domain.DomainSID
 	)
-	$currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-	$windowsPrincipal = New-Object System.Security.Principal.WindowsPrincipal($currentUser)
+	$currentUser = $out.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+	$windowsPrincipal = [System.Security.Principal.WindowsPrincipal]::new($currentUser)
 	if($windowsPrincipal.IsInRole($domainAdminsSid)){
-		Write-Log "  Running as Domain Admin: $domainAdminsSid"
+		Write-Log "  Running as Domain Admin: $($currentUser.Name), $domainAdminsSid"
 	}else{
 		Write-Log ("Current user ($($currentUser.Name)) is not running as a Domain Administrator." +
 			'  Results may be incomplete!') -Severity WARN
 	}
+
+	Write-Log 'Writing parameters JSON file...'
+
+	$paramsJsonPath = $filePattern -f '-params' + '.json'
+	$out.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
+	$out.reportFiles += $paramsJsonPath
 
 	$commonAdProps = 'objectSid', 'Name',
 		@{type='class'; class='user', 'computer'; props=
