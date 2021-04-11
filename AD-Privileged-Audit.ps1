@@ -139,24 +139,61 @@ function Out-ADReports{
 }
 
 function Invoke-ADPrivGroups(){
-	$groups = @()
+	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
+	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
+	# - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
+	$dsid = $domain.DomainSID.Value + '-'
+	$groupsIn = [ordered]@{
+		'Domain Admins' = $dsid + '512'
+		'Enterprise Admins' = $dsid + '519'
+		'Administrators' = 'S-1-5-32-544'
+		'Schema Admins' = $dsid + '518'
+		'Account Operators' = 'S-1-5-32-548'
+		'Server Operators' = 'S-1-5-32-549'
+		'Backup Operators' = 'S-1-5-32-551'
+		# DnsAdmins and DnsUpdateProxy are documented in the "dn579255" reference
+		#   above as having RIDs 1102/1103.
+		# However, I've also seen these as 1101/1102, and these are no longer
+		#  documented as "well-known" in current documentation.
+		'DnsAdmins' = $null
+		'DnsUpdateProxy' = $null
+		'DHCP Administrators' = $null
+		'Domain Controllers' = $dsid + '516'
+	}
+
+	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
 	$groupAdProps = Get-ADProps 'group'
 
-	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
-	('Domain Admins', 'Administrators', 'Schema Admins', 'Enterprise Admins',
-			'Account Operators', 'Backup Operators', 'Server Operators',
-			'DnsAdmins', 'DHCP Administrators', 'Domain Controllers'
-			) | ForEach-Object{
-		$groupName = $_
-
-		Write-Log "  - Processing group: $($groupName)..."
-
+	function Get-ADPrivGroup($identity){
 		try{
-			$group = Get-ADGroup -Identity $groupName -Properties $groupAdProps
-			$groups += $group
+			$group = Get-ADGroup -Identity $identity -Properties $groupAdProps
+			[void]$groups.Add($group)
+			return $group
 		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
 			Write-Log $_ -Severity WARN
 		}
+	}
+
+	Write-Log 'Processing Privileged AD Group Members (phase 1)...'
+
+	$groupsIn.GetEnumerator() | ForEach-Object{
+		$groupName = $_.Name
+		$expectedGroup = $_.Value
+
+		Write-Log "  - Processing group: $($groupName)..."
+
+		$group = Get-ADPrivGroup $groupName
+		if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
+			Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
+				"  Also attempting as $($expectedGroup)..."
+			) -Severity WARN
+			$group = Get-ADPrivGroup $expectedGroup
+		}
+	}
+
+	$groups | ForEach-Object{
+		$group = $_
+		Write-Log "  - Processing group: $($group.Name)..."
 
 		$group | Get-ADGroupMember -Recursive -PipelineVariable gm | ForEach-Object{
 			$getCmd = (&{switch($gm.objectClass){
