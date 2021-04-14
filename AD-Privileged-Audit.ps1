@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -Modules ActiveDirectory
 
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-11
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-13
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-04-11'
+$version = '2021-04-13'
 $interactive = !$batch
 
 function Write-Log{
@@ -166,15 +166,11 @@ function Invoke-ADPrivGroups(){
 
 	function Get-ADPrivGroup($identity){
 		try{
-			$group = Get-ADGroup -Identity $identity -Properties $groupAdProps
-			[void]$groups.Add($group)
-			return $group
+			return Get-ADGroup -Identity $identity -Properties $groupAdProps
 		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
 			Write-Log $_ -Severity WARN
 		}
 	}
-
-	Write-Log 'Processing Privileged AD Group Members (phase 1)...'
 
 	$groupsIn.GetEnumerator() | ForEach-Object{
 		$groupName = $_.Name
@@ -183,17 +179,17 @@ function Invoke-ADPrivGroups(){
 		Write-Log "  - Processing group: $($groupName)..."
 
 		$group = Get-ADPrivGroup $groupName
+		$group
 		if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
 			Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
 				"  Also attempting as $($expectedGroup)..."
 			) -Severity WARN
 			$group = Get-ADPrivGroup $expectedGroup
+			$group
 		}
-	}
-
-	$groups | ForEach-Object{
+	} | ForEach-Object{
 		$group = $_
-		Write-Log "  - Processing group: $($group.Name)..."
+		[void]$groups.Add($group)
 
 		$group | Get-ADGroupMember -Recursive -PipelineVariable gm | ForEach-Object{
 			$getCmd = (&{switch($gm.objectClass){
