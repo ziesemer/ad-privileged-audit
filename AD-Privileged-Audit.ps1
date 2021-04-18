@@ -138,6 +138,79 @@ function Out-ADReports{
 	}
 }
 
+<#
+.SYNOPSIS
+	Required over the ActiveDirectory module's Get-ADGroupMember to avoid failures when ForeignSecurityPrinciples are included -
+		especially for unresolved or orphaned FSPs, or due to insufficient permissions in the foreign domain.
+	Also provides group details - including for potentially empty groups - and details the path by which entity is included.
+#>
+function Get-ADGroupMemberSafe($identity, $ctx, $path){
+
+	Write-Log ('  Get-ADGroupMemberSafe: {0}' `
+			-f $identity) `
+		-Severity DEBUG
+
+	$group = $identity | Get-ADGroup -Properties ($ctx.adProps.groupIn + 'Members')
+
+	if(!$path){
+		$path = @($group.DistinguishedName)
+	}
+
+	function New-ADGroupMemberContext($entry){
+		[PSCustomObject]@{
+			entry = $entry
+			path = $path
+		}
+	}
+
+	$group `
+		| Select-Object -ExpandProperty Members `
+		| Get-ADObject -PipelineVariable gm `
+		| ForEach-Object{
+
+		Write-Log ('    Member: gm={0}, oc={1}, group={2}' `
+				-f $gm, $gm.objectClass, $group) `
+			-Severity DEBUG
+
+		switch($gm.objectClass){
+			'user'{
+				New-ADGroupMemberContext ($gm | Get-ADUser -Properties $ctx.adProps.userIn)
+				break
+			}
+			'computer'{
+				New-ADGroupMemberContext ($gm | Get-ADComputer -Properties $ctx.adProps.compIn)
+				break
+			}
+			'group'{
+				New-ADGroupMemberContext $group
+				if($path -contains $gm.DistinguishedName){
+					Write-Log ('ADGroupMemberSafe Circular Reference: "{0}" already in "{1}".' `
+							-f $gm.DistinguishedName, ($path -join '; ')) `
+						-Severity WARN
+				}else{
+					Get-ADGroupMemberSafe -identity $gm -ctx $ctx -path ($path + $gm.DistinguishedName)
+				}
+				break
+			}
+			{$_ -in (
+				'foreignSecurityPrincipal',
+				'msDS-ManagedServiceAccount',
+				'msDS-GroupManagedServiceAccount'
+			)}{
+				New-ADGroupMemberContext ($gm | Get-ADObject -Properties $ctx.adProps.objectIn)
+				break
+			}
+			default{
+				Write-Log ('Unexpected group member type: {0} / {1}.' `
+						-f $gm.objectClass, $gm.DistinguishedName) `
+					-Severity WARN
+				New-ADGroupMemberContext ($gm | Get-ADObject -Properties $ctx.adProps.objectIn)
+				break
+			}
+		}
+	}
+}
+
 function Invoke-ADPrivGroups($ctx){
 	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
 	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
@@ -162,6 +235,8 @@ function Invoke-ADPrivGroups($ctx){
 	}
 
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
+	$ctx.adProps.allOut = Get-ADProps -generated
+	$ctx.adProps.objectIn = Get-ADProps 'object'
 	$ctx.adProps.groupIn = Get-ADProps 'group'
 	$ctx.adProps.groupOut = Get-ADProps 'group' -generated
 
@@ -192,37 +267,28 @@ function Invoke-ADPrivGroups($ctx){
 		$group = $_
 		[void]$groups.Add($group)
 
-		$group | Get-ADGroupMember -Recursive -PipelineVariable gm | ForEach-Object{
-			$getCmd = (&{switch($gm.objectClass){
-				'user'{
-					'Get-ADUser'
-				}
-				'computer'{
-					'Get-ADComputer'
-				}
-				'group'{
-					# Ignore, handled by -Recursive above.
-				}
-				default{
-					throw "Unhandled group member type: $gm.objectClass"
-				}
-			}})
-
-			$ado = $gm | & $getCmd -Properties $ctx.adProps.userIn
-
+		Get-ADGroupMemberSafe -identity $group -ctx $ctx | ForEach-Object{
+			$gm = $_
 			$x = [ordered]@{
 				GroupSid = $group.objectSid
 				GroupName = $group.Name
 			}
 
-			$ctx.adProps.userIn | ForEach-Object {
-				$x.$_ = $ado.$_
+			$gm.entry `
+					| Get-Member -MemberType Properties `
+					| Select-Object -ExpandProperty Name `
+					| ForEach-Object{
+				$x.$_ = $gm.entry.$_
 			}
+			$x.MemberEntry = $gm.entry
+			$x.MemberPathArray = $gm.path
+			$x.MemberPath = $gm.path -join '; '
+			$x.MemberDepth = $gm.path.Count
 
 			[PSCustomObject]$x
 		}
 	} | Convert-Timestamps `
-		| Select-Object -Property (@('GroupSid', 'GroupName') + $ctx.adProps.userOut) `
+		| Select-Object -Property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
 		| Out-ADReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
 
 	$groups | Select-Object -Property $ctx.adProps.groupOut `
@@ -296,6 +362,7 @@ function Invoke-Reports(){
 	$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
 	$ctx.reportFiles += $paramsJsonPath
 
+	# - https://docs.microsoft.com/en-us/windows/win32/adschema/classes-all
 	$commonAdProps = 'objectSid', 'Name',
 		@{type='class'; class='user', 'computer'; props=
 			'Enabled',
@@ -305,7 +372,7 @@ function Invoke-Reports(){
 		'whenCreated', 'whenChanged',
 		'DistinguishedName', 'sAMAccountName', 
 		'DisplayName', 'Description',
-		@{type='class'; class='user'; props=
+		@{type='class'; class='user', 'computer'; props=
 			'UserPrincipalName', 'Company', 'Title', 'Department', 'EmployeeID', 'EmployeeNumber'},
 		@{type='class'; class='group'; props=
 			'GroupCategory', 'GroupScope', 'groupType'},
@@ -324,7 +391,7 @@ function Invoke-Reports(){
 			}else{
 				switch($p.type){
 					'class'{
-						if($class -in $p.class){
+						if(!$class -or $class -in $p.class){
 							Expand-ADProp $p.props
 						}
 					}
