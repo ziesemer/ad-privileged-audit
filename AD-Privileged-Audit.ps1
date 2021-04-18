@@ -1,7 +1,7 @@
 #Requires -Version 5.1
 #Requires -Modules ActiveDirectory
 
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-13
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-18
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-04-13'
+$version = '2021-04-18'
 $interactive = !$batch
 
 function Write-Log{
@@ -138,7 +138,7 @@ function Out-ADReports{
 	}
 }
 
-function Invoke-ADPrivGroups(){
+function Invoke-ADPrivGroups($ctx){
 	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
 	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
 	# - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
@@ -162,11 +162,12 @@ function Invoke-ADPrivGroups(){
 	}
 
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
-	$groupAdProps = Get-ADProps 'group'
+	$ctx.adProps.groupIn = Get-ADProps 'group'
+	$ctx.adProps.groupOut = Get-ADProps 'group' -generated
 
 	function Get-ADPrivGroup($identity){
 		try{
-			return Get-ADGroup -Identity $identity -Properties $groupAdProps
+			return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
 		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
 			Write-Log $_ -Severity WARN
 		}
@@ -207,29 +208,29 @@ function Invoke-ADPrivGroups(){
 				}
 			}})
 
-			$ado = $gm | & $getCmd -Properties $userAdPropsIn
+			$ado = $gm | & $getCmd -Properties $ctx.adProps.userIn
 
 			$x = [ordered]@{
 				GroupSid = $group.objectSid
 				GroupName = $group.Name
 			}
 
-			$userAdPropsIn | ForEach-Object {
+			$ctx.adProps.userIn | ForEach-Object {
 				$x.$_ = $ado.$_
 			}
 
 			[PSCustomObject]$x
 		}
 	} | Convert-Timestamps `
-		| Select-Object -Property (@('GroupSid', 'GroupName') + $userAdPropsOut) `
-		| Out-ADReports -ctx $out -name 'privGroupMembers' -title 'Privileged AD Group Members'
+		| Select-Object -Property (@('GroupSid', 'GroupName') + $ctx.adProps.userOut) `
+		| Out-ADReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
 
-	$groups | Select-Object -Property $groupAdProps `
-		| Out-ADReports -ctx $out -name 'privGroups' -title 'Privileged AD Groups'
+	$groups | Select-Object -Property $ctx.adProps.groupOut `
+		| Out-ADReports -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups'
 }
 
 function Invoke-Reports(){
-	$out = [ordered]@{
+	$ctx = [ordered]@{
 		params = [ordered]@{
 			version = $version
 			currentUser = $null
@@ -239,6 +240,7 @@ function Invoke-Reports(){
 		reports = [ordered]@{}
 		reportFiles = @()
 		filePattern = $null
+		adProps = [ordered]@{}
 	}
 
 	Write-Log ('Version: ' + $version)
@@ -247,7 +249,7 @@ function Invoke-Reports(){
 		$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 		$reportsFolder = Join-Path $desktopPath 'AD-Reports'
 	}
-	$out.params.reportsFolder = $reportsFolder
+	$ctx.params.reportsFolder = $reportsFolder
 	Write-Log ('$reportsFolder: {0}' -f $reportsFolder)
 	[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
 
@@ -258,16 +260,16 @@ function Invoke-Reports(){
 	$currentThread.CurrentCulture = $culture
 	$currentThread.CurrentUICulture = $culture
 
-	$now = $out.params.now = Get-Date
+	$now = $ctx.params.now = Get-Date
 	Write-Log ('$now: {0}' -f $now)
-	$filterDate = $out.params.filterDate = $now.AddDays(-90)
+	$filterDate = $ctx.params.filterDate = $now.AddDays(-90)
 	Write-Log ('$filterDate: {0}' -f $filterDate)
-	$filterDatePassword = $out.params.filterDatePassword = $now.AddDays(-365)
+	$filterDatePassword = $ctx.params.filterDatePassword = $now.AddDays(-365)
 	Write-Log ('$filterDatePassword: {0}' -f $filterDatePassword)
 
-	$domain = $out.params.domain = Get-ADDomain
+	$domain = $ctx.params.domain = Get-ADDomain
 
-	$filePattern = $out.filePattern = Join-Path $reportsFolder `
+	$filePattern = $ctx.filePattern = Join-Path $reportsFolder `
 		($domain.DNSRoot +
 			'{0}-' +
 			$(Get-Date -Date $now -Format 'yyyy-MM-dd'))
@@ -279,7 +281,7 @@ function Invoke-Reports(){
 		[System.Security.Principal.WellKnownSidType]::AccountDomainAdminsSid,
 		$domain.DomainSID
 	)
-	$currentUser = $out.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 	$windowsPrincipal = [System.Security.Principal.WindowsPrincipal]::new($currentUser)
 	if($windowsPrincipal.IsInRole($domainAdminsSid)){
 		Write-Log "  Running as Domain Admin: $($currentUser.Name), $domainAdminsSid"
@@ -291,8 +293,8 @@ function Invoke-Reports(){
 	Write-Log 'Writing parameters JSON file...'
 
 	$paramsJsonPath = $filePattern -f '-params' + '.json'
-	$out.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
-	$out.reportFiles += $paramsJsonPath
+	$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
+	$ctx.reportFiles += $paramsJsonPath
 
 	$commonAdProps = 'objectSid', 'Name',
 		@{type='class'; class='user', 'computer'; props=
@@ -342,14 +344,14 @@ function Invoke-Reports(){
 		return $props
 	}
 
-	$userAdPropsIn = Get-ADProps 'user'
-	$userAdPropsOut = Get-ADProps 'user' -generated
-	$compAdPropsIn = Get-ADProps 'computer'
-	$compAdPropsOut = Get-ADProps 'computer' -generated
+	$ctx.adProps.userIn = Get-ADProps 'user'
+	$ctx.adProps.userOut = Get-ADProps 'user' -generated
+	$ctx.adProps.compIn = Get-ADProps 'computer'
+	$ctx.adProps.compOut = Get-ADProps 'computer' -generated
 
 	# Privileged AD Groups and Members...
 
-	Invoke-ADPrivGroups
+	Invoke-ADPrivGroups -ctx $ctx
 
 	# Users that haven't logged-in within # days...
 
@@ -357,11 +359,11 @@ function Invoke-Reports(){
 			-Filter {
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
-			-Properties $userAdPropsIn `
+			-Properties $ctx.adProps.userIn `
 		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
-		| Select-Object -Property $userAdPropsOut `
-		| Out-ADReports -ctx $out -name 'staleUsers' -title 'Stale Users'
+		| Select-Object -Property $ctx.adProps.userOut `
+		| Out-ADReports -ctx $ctx -name 'staleUsers' -title 'Stale Users'
 
 	# Users with passwords older than # days...
 
@@ -369,11 +371,11 @@ function Invoke-Reports(){
 			-Filter {
 				Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
 			} `
-			-Properties $userAdPropsIn `
+			-Properties $ctx.adProps.userIn `
 		| Convert-Timestamps `
 		| Sort-Object -Property PasswordLastSet `
-		| Select-Object -Property $userAdPropsOut `
-		| Out-ADReports -ctx $out -name 'stalePasswords' -title 'Stale Passwords'
+		| Select-Object -Property $ctx.adProps.userOut `
+		| Out-ADReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
 
 	# Computers that haven't logged-in within # days...
 
@@ -381,11 +383,11 @@ function Invoke-Reports(){
 			-Filter {
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
-			-Properties $compAdPropsIn `
+			-Properties $ctx.adProps.compIn `
 		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
-		| Select-Object -Property $compAdPropsOut `
-		| Out-ADReports -ctx $out -name 'staleComps' -title 'Stale Computers'
+		| Select-Object -Property $ctx.adProps.compOut `
+		| Out-ADReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
@@ -393,29 +395,29 @@ function Invoke-Reports(){
 	if($admPwdAttr){
 		function Invoke-LAPSReport($filter){
 			Get-ADComputer -Filter $filter `
-				-Properties ($compAdPropsIn + 'ms-Mcs-AdmPwdExpirationTime') `
+				-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
 			| Convert-Timestamps -dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime' `
-			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $compAdPropsOut)
+			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut)
 		}
 	
 		Invoke-LAPSReport {
 					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
 				} `
-			| Out-ADReports -ctx $out -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
+			| Out-ADReports -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
 		Invoke-LAPSReport {
 					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
 				} `
-			| Out-ADReports -ctx $out -name 'LAPS-In' -title 'Computers with current LAPS.'
+			| Out-ADReports -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.'
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
 
 	if(!($noFiles -or $noZip)){
 		Write-Log 'Creating compressed archive...'
-		Compress-Archive -Path $out.reportFiles -DestinationPath ($filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
+		Compress-Archive -Path $ctx.reportFiles -DestinationPath ($filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
-	return [PSCustomObject]$out
+	return [PSCustomObject]$ctx
 }
 
 try{
