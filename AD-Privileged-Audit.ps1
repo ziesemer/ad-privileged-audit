@@ -63,17 +63,31 @@ function Write-Log{
 	})
 }
 
-function Convert-Timestamps{
+function ConvertTo-ADPrivRows{
 	[CmdletBinding()]
 	param(
 		[Parameter(Mandatory, ValueFromPipeline)]
 		[PSCustomObject]$row,
+		[Object[]]$property,
 		[System.Collections.Generic.HashSet[string]]$dateProps = 'lastLogonTimestamp'
 	)
 
+	Begin{
+		$rowCount = 1
+		if($property){
+			$outProps = @(, 'Row#') + $property
+		}else{
+			$outProps = $null
+		}
+	}
 	Process{
-		$out = [ordered]@{}
-		$row | Get-Member -MemberType Properties | Select-Object -ExpandProperty Name | ForEach-Object {
+		$out = [ordered]@{
+			'Row#' = $rowCount++
+		}
+		$row |
+				Get-Member -MemberType Properties |
+				Select-Object -ExpandProperty Name |
+				ForEach-Object {
 			if($dateProps.Contains($_)){
 				$out.($_ + 'Date') = if($row.$_){
 					[DateTime]::FromFileTime($row.$_)
@@ -83,7 +97,11 @@ function Convert-Timestamps{
 			}
 			$out.$_ = $row.$_
 		}
-		return [PSCustomObject]$out
+		# The Select-Object here must be called only after the the object is re-created above,
+		#   including null properties for the columns requested,
+		#   or operating under StrictMode will throw a PropertyNotFoundException (PropertyNotFoundException).
+		return [PSCustomObject]$out |
+			Select-Object -Property $outProps
 	}
 }
 
@@ -273,11 +291,10 @@ function Invoke-ADPrivGroups($ctx){
 
 			[PSCustomObject]$x
 		}
-	} | Convert-Timestamps `
-		| Select-Object -Property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
+	} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
 		| Out-ADReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
 
-	$groups | Select-Object -Property $ctx.adProps.groupOut `
+	$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut `
 		| Out-ADReports -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups'
 }
 
@@ -407,9 +424,8 @@ function Invoke-Reports(){
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
 			-Properties $ctx.adProps.userIn `
-		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
-		| Select-Object -Property $ctx.adProps.userOut `
+		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
 		| Out-ADReports -ctx $ctx -name 'staleUsers' -title 'Stale Users'
 
 	# Users with passwords older than # days...
@@ -419,9 +435,8 @@ function Invoke-Reports(){
 				Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
 			} `
 			-Properties $ctx.adProps.userIn `
-		| Convert-Timestamps `
 		| Sort-Object -Property PasswordLastSet `
-		| Select-Object -Property $ctx.adProps.userOut `
+		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
 		| Out-ADReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
 
 	# Computers that haven't logged-in within # days...
@@ -431,9 +446,8 @@ function Invoke-Reports(){
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
 			-Properties $ctx.adProps.compIn `
-		| Convert-Timestamps `
 		| Sort-Object -Property lastLogonTimestamp `
-		| Select-Object -Property $ctx.adProps.compOut `
+		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
 		| Out-ADReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
@@ -443,8 +457,8 @@ function Invoke-Reports(){
 		function Invoke-LAPSReport($filter){
 			Get-ADComputer -Filter $filter `
 				-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
-			| Convert-Timestamps -dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime' `
-			| Select-Object -Property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut)
+			| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
+				-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
 	
 		Invoke-LAPSReport {
