@@ -1,7 +1,6 @@
 #Requires -Version 5.1
-#Requires -Modules ActiveDirectory
 
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-18
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-22
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
@@ -25,7 +24,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-04-18'
+$version = '2021-04-22'
 $interactive = !$batch
 
 function Write-Log{
@@ -489,6 +488,7 @@ function Invoke-Reports(){
 
 try{
 	if($elevated){
+		Import-Module ActiveDirectory
 		Invoke-Reports
 		Write-Log 'Done!'
 		if($interactive){
