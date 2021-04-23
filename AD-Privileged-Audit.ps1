@@ -144,7 +144,9 @@ function Out-ADReports{
 			}
 		}elseif(!$noFiles){
 			# Write (or overwrite) an empty file.
-			[void][System.IO.FileStream]::new($path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write)
+			[System.IO.FileStream]::new(
+					$path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write
+				).Close()
 			$ctx.reportFiles += $path
 		}
 	}
