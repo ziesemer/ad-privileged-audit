@@ -28,6 +28,8 @@ $InformationPreference = 'Continue'
 $version = '2021-04-22'
 $interactive = !$batch
 
+$warnings = [System.Collections.ArrayList]::new()
+
 function Write-Log{
 	[CmdletBinding()]
 	param(
@@ -49,6 +51,9 @@ function Write-Log{
 		$color = [ConsoleColor]::Cyan
 	}elseif($severity -ceq 'WARN'){
 		$color = [ConsoleColor]::Yellow
+		[void]$warnings.Add([PSCustomObject]@{
+			Text = $Message
+		})
 	}elseif($severity -ceq 'ERROR'){
 		$color = [ConsoleColor]::Red
 	}
@@ -118,7 +123,7 @@ function Out-ADReports{
 	)
 	Begin{
 		Write-Log "Processing $title ($name)..."
-		$results = New-Object System.Collections.ArrayList
+		$results = [System.Collections.ArrayList]::new()
 	}
 	Process{
 		[void]$results.Add([PSCustomObject]$inputResults)
@@ -385,7 +390,7 @@ function Invoke-Reports(){
 		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
 	function Get-ADProps([string]$class, [switch]$generated){
-		$props = New-Object System.Collections.ArrayList
+		$props = [System.Collections.ArrayList]::new()
 		function Expand-ADProp($p){
 			if($p -is [string]){
 				[void]$props.Add($p)
@@ -474,6 +479,12 @@ function Invoke-Reports(){
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
+
+	# Warnings
+
+	$warnings `
+		| ConvertTo-ADPrivRows `
+		| Out-ADReports -ctx $ctx -name 'warnings' -title 'Warnings'
 
 	if(!($noFiles -or $noZip)){
 		Write-Log 'Creating compressed archive...'
