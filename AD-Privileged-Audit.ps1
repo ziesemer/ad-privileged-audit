@@ -37,26 +37,20 @@ function Write-Log{
 
 		[Parameter()]
 		[ValidateNotNullOrEmpty()]
-		[ValidateSet('ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE')]
+		[ValidateSet('ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', IgnoreCase = $false)]
 		[string]$Severity = 'INFO'
 	)
 
-	switch($Severity){
-		'ERROR'{
-			$color = [ConsoleColor]::Red
-		}
-		'WARN'{
-			$color = [ConsoleColor]::Yellow
-		}
-		'INFO'{
-			$color = [ConsoleColor]::Cyan
-		}
-		'DEBUG'{
-			$color = [ConsoleColor]::Gray
-		}
-		'TRACE'{
-			$color = [ConsoleColor]::DarkGray
-		}
+	if($severity -ceq 'TRACE'){
+		$color = [ConsoleColor]::DarkGray
+	}elseif($severity -ceq 'DEBUG'){
+		$color = [ConsoleColor]::Gray
+	}elseif($severity -ceq 'INFO'){
+		$color = [ConsoleColor]::Cyan
+	}elseif($severity -ceq 'WARN'){
+		$color = [ConsoleColor]::Yellow
+	}elseif($severity -ceq 'ERROR'){
+		$color = [ConsoleColor]::Red
 	}
 
 	$msg = "$(Get-Date -f s) [$Severity] $Message"
@@ -168,45 +162,37 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 		| Get-ADObject -PipelineVariable gm `
 		| ForEach-Object{
 
+		$oc = $gm.objectClass
+
 		Write-Log ('    Member: gm={0}, oc={1}, group={2}' `
-				-f $gm, $gm.objectClass, $group) `
+				-f $gm, $oc, $group) `
 			-Severity DEBUG
 
-		switch($gm.objectClass){
-			'user'{
-				New-ADGroupMemberContext ($gm | Get-ADUser -Properties $ctx.adProps.userIn)
-				break
+		if($oc -ceq 'user'){
+			New-ADGroupMemberContext ($gm | Get-ADUser -Properties $ctx.adProps.userIn)
+		}elseif($oc -ceq 'computer'){
+			New-ADGroupMemberContext ($gm | Get-ADComputer -Properties $ctx.adProps.compIn)
+		}elseif($oc -ceq 'group'){
+			New-ADGroupMemberContext $group
+			$dn = $gm.DistinguishedName
+			if($path -contains $dn){
+				Write-Log ('ADGroupMemberSafe Circular Reference: "{0}" already in "{1}".' `
+						-f $dn, ($path -join '; ')) `
+					-Severity WARN
+			}else{
+				Get-ADGroupMemberSafe -identity $gm -ctx $ctx -path ($path + $dn)
 			}
-			'computer'{
-				New-ADGroupMemberContext ($gm | Get-ADComputer -Properties $ctx.adProps.compIn)
-				break
-			}
-			'group'{
-				New-ADGroupMemberContext $group
-				if($path -contains $gm.DistinguishedName){
-					Write-Log ('ADGroupMemberSafe Circular Reference: "{0}" already in "{1}".' `
-							-f $gm.DistinguishedName, ($path -join '; ')) `
-						-Severity WARN
-				}else{
-					Get-ADGroupMemberSafe -identity $gm -ctx $ctx -path ($path + $gm.DistinguishedName)
-				}
-				break
-			}
-			{$_ -in (
+		}else{
+			if($oc -cnotin (
 				'foreignSecurityPrincipal',
 				'msDS-ManagedServiceAccount',
 				'msDS-GroupManagedServiceAccount'
-			)}{
-				New-ADGroupMemberContext ($gm | Get-ADObject -Properties $ctx.adProps.objectIn)
-				break
-			}
-			default{
+			)){
 				Write-Log ('Unexpected group member type: {0} / {1}.' `
-						-f $gm.objectClass, $gm.DistinguishedName) `
+						-f $oc, $gm.DistinguishedName) `
 					-Severity WARN
-				New-ADGroupMemberContext ($gm | Get-ADObject -Properties $ctx.adProps.objectIn)
-				break
 			}
+			New-ADGroupMemberContext ($gm | Get-ADObject -Properties $ctx.adProps.objectIn)
 		}
 	}
 }
@@ -388,22 +374,16 @@ function Invoke-Reports(){
 				$p | ForEach-Object{
 					Expand-ADProp $_
 				}
-			}else{
-				switch($p.type){
-					'class'{
-						if(!$class -or $class -in $p.class){
-							Expand-ADProp $p.props
-						}
-					}
-					'generated'{
-						if($generated){
-							Expand-ADProp $p.props
-						}
-					}
-					default{
-						throw "Unhandled property type: $($p.type)"
-					}
+			}elseif($p.type -ceq 'class'){
+				if(!$class -or $class -in $p.class){
+					Expand-ADProp $p.props
 				}
+			}elseif($p.type -ceq 'generated'){
+				if($generated){
+					Expand-ADProp $p.props
+				}
+			}else{
+				throw "Unhandled property type: $($p.type)"
 			}
 		}
 
