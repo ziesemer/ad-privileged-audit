@@ -1,6 +1,7 @@
-#Requires -Version 5.1
-
 # Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-22
+# SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
+
+#Requires -Version 5.1
 
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
