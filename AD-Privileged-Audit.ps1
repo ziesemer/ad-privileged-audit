@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-22
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-27
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -6,18 +6,18 @@
 Param(
 	# Technically, most of this works without elevation - but certain AD queries will not work properly without,
 	#   such as filters around enabled status on AD objects.
-	[Parameter(ParameterSetName="notElevated")]
+	[Parameter(ParameterSetName='notElevated')]
 	[switch]$notElevated,
 
-	[Parameter(ParameterSetName="elevated", Mandatory=$true)]
+	[Parameter(ParameterSetName='elevated', Mandatory=$true)]
 	[switch]$elevated,
-	[Parameter(ParameterSetName="elevated")]
+	[Parameter(ParameterSetName='elevated')]
 	[switch]$batch,
-	[Parameter(ParameterSetName="elevated")]
+	[Parameter(ParameterSetName='elevated')]
 	[IO.FileInfo]$reportsFolder = $null,
-	[Parameter(ParameterSetName="elevated")]
+	[Parameter(ParameterSetName='elevated')]
 	[switch]$noFiles,
-	[Parameter(ParameterSetName="elevated")]
+	[Parameter(ParameterSetName='elevated')]
 	[switch]$noZip
 )
 
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-04-22'
+$version = '2021-04-27'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -92,7 +92,7 @@ function ConvertTo-ADPrivRows{
 		$row |
 				Get-Member -MemberType Properties |
 				Select-Object -ExpandProperty Name |
-				ForEach-Object {
+				ForEach-Object{
 			if($dateProps.Contains($_)){
 				$out.($_ + 'Date') = if($row.$_){
 					[DateTime]::FromFileTime($row.$_)
@@ -269,8 +269,8 @@ function Invoke-ADPrivGroups($ctx){
 		$group
 		if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
 			Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
-				"  Also attempting as $($expectedGroup)..."
-			) -Severity WARN
+					"  Also attempting as $($expectedGroup)..."
+				) -Severity WARN
 			$group = Get-ADPrivGroup $expectedGroup
 			$group
 		}
