@@ -198,7 +198,7 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 		}elseif($oc -ceq 'computer'){
 			New-ADGroupMemberContext ($gm | Get-ADComputer -Properties $ctx.adProps.compIn)
 		}elseif($oc -ceq 'group'){
-			New-ADGroupMemberContext $group
+			New-ADGroupMemberContext ($gm | Get-ADGroup -Properties $ctx.adProps.groupIn)
 			$dn = $gm.DistinguishedName
 			if($path -contains $dn){
 				Write-Log ('ADGroupMemberSafe Circular Reference: "{0}" already in "{1}".' `
