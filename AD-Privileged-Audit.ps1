@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-27
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-29
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-04-27'
+$version = '2021-04-29'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -431,7 +431,7 @@ function Invoke-Reports(){
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
 			-Properties $ctx.adProps.userIn `
-		| Sort-Object -Property lastLogonTimestamp `
+		| Sort-Object -Property 'lastLogonTimestamp' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
 		| Out-ADReports -ctx $ctx -name 'staleUsers' -title 'Stale Users'
 
@@ -442,7 +442,7 @@ function Invoke-Reports(){
 				Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
 			} `
 			-Properties $ctx.adProps.userIn `
-		| Sort-Object -Property PasswordLastSet `
+		| Sort-Object -Property 'PasswordLastSet' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
 		| Out-ADReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
 
@@ -453,7 +453,7 @@ function Invoke-Reports(){
 				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
 			} `
 			-Properties $ctx.adProps.compIn `
-		| Sort-Object -Property lastLogonTimestamp `
+		| Sort-Object -Property 'lastLogonTimestamp' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
 		| Out-ADReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
 
@@ -464,6 +464,7 @@ function Invoke-Reports(){
 		function Invoke-LAPSReport($filter){
 			Get-ADComputer -Filter $filter `
 					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
+				| Sort-Object -Property 'ms-Mcs-AdmPwdExpirationTime', 'lastLogonTimestamp' `
 				| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
 					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
