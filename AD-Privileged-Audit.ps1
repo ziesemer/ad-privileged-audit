@@ -39,7 +39,7 @@ function Write-Log{
 
 		[Parameter()]
 		[ValidateNotNullOrEmpty()]
-		[ValidateSet('ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', IgnoreCase = $false)]
+		[ValidateSet('ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE', IgnoreCase=$false)]
 		[string]$Severity = 'INFO'
 	)
 
@@ -463,9 +463,9 @@ function Invoke-Reports(){
 	if($admPwdAttr){
 		function Invoke-LAPSReport($filter){
 			Get-ADComputer -Filter $filter `
-				-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
-			| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
-				-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
+					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
+				| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
+					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
 	
 		Invoke-LAPSReport {
