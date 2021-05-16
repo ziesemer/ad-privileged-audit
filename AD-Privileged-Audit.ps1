@@ -81,7 +81,10 @@ function Invoke-Elevate{
 		}
 	}
 
-	Start-Process powershell.exe -ArgumentList `
+	$psExe = (Get-Process -Id $PID).Path
+	Write-Log "PowerShell executable: $psExe"
+
+	Start-Process $psExe -ArgumentList `
 		"-ExecutionPolicy Unrestricted -File `"$path`" -elevated" `
 		-Verb RunAs
 }
@@ -343,6 +346,8 @@ function Invoke-Reports(){
 			currentUser = $null
 			hostName = [System.Net.Dns]::GetHostName()
 			domain = $null
+			psExe = (Get-Process -Id $PID).Path
+			psVersionTable = $PSVersionTable
 		}
 		reports = [ordered]@{}
 		reportFiles = @()
