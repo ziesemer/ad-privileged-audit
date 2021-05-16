@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-04-29
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-05-16
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-04-29'
+$version = '2021-05-16'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -175,10 +175,17 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 		$path = @($group.DistinguishedName)
 	}
 
-	function New-ADGroupMemberContext($entry){
-		[PSCustomObject]@{
-			entry = $entry
-			path = $path
+	function New-ADGroupMemberContext{
+		[CmdletBinding()]
+		param(
+			[Parameter(Mandatory, ValueFromPipeline)]
+			$entry
+		)
+		Process{
+			[PSCustomObject]@{
+				entry = $entry
+				path = $path
+			}
 		}
 	}
 
@@ -194,11 +201,11 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 			-Severity DEBUG
 
 		if($oc -ceq 'user'){
-			New-ADGroupMemberContext ($gm | Get-ADUser -Properties $ctx.adProps.userIn)
+			$gm | Get-ADUser -Properties $ctx.adProps.userIn | New-ADGroupMemberContext
 		}elseif($oc -ceq 'computer'){
-			New-ADGroupMemberContext ($gm | Get-ADComputer -Properties $ctx.adProps.compIn)
+			$gm | Get-ADComputer -Properties $ctx.adProps.compIn | New-ADGroupMemberContext
 		}elseif($oc -ceq 'group'){
-			New-ADGroupMemberContext ($gm | Get-ADGroup -Properties $ctx.adProps.groupIn)
+			$gm | Get-ADGroup -Properties $ctx.adProps.groupIn | New-ADGroupMemberContext
 			$dn = $gm.DistinguishedName
 			if($path -contains $dn){
 				Write-Log ('ADGroupMemberSafe Circular Reference: "{0}" already in "{1}".' `
@@ -217,8 +224,14 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 						-f $oc, $gm.DistinguishedName) `
 					-Severity WARN
 			}
-			New-ADGroupMemberContext ($gm | Get-ADObject -Properties $ctx.adProps.objectIn)
+			$gm | Get-ADObject -Properties $ctx.adProps.objectIn | New-ADGroupMemberContext
 		}
+	}
+
+	if($group.GroupScope -ne 'DomainLocal'){
+		Get-ADUser -Filter ('PrimaryGroup -eq ''' + $group.DistinguishedName + '''') `
+				-Properties $ctx.adProps.userIn `
+			| New-ADGroupMemberContext
 	}
 }
 
@@ -383,7 +396,8 @@ function Invoke-Reports(){
 		'DistinguishedName', 'sAMAccountName', 
 		'DisplayName', 'Description',
 		@{type='class'; class='user', 'computer'; props=
-			'UserPrincipalName', 'Company', 'Title', 'Department', 'EmployeeID', 'EmployeeNumber'},
+			'UserPrincipalName', 'Company', 'Title', 'Department', 'EmployeeID', 'EmployeeNumber',
+			'PrimaryGroupID', 'PrimaryGroup'},
 		@{type='class'; class='group'; props=
 			'GroupCategory', 'GroupScope', 'groupType'},
 		'ObjectClass', 'ObjectGUID',
