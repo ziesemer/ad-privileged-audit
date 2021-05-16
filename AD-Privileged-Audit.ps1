@@ -68,6 +68,24 @@ function Write-Log{
 	})
 }
 
+function Invoke-Elevate{
+	$path = $PSCommandPath
+	Write-Log "Resolving path: $path"
+
+	# Handle that if running from a mapped drive, the same mapping probably will not exist in the RunAs context.
+	if($path -match '^([A-Z]):(.+)$'){
+		$drive = Get-PSDrive $Matches[1]
+		if($drive.DisplayRoot){
+			$path = Join-Path $drive.DisplayRoot $Matches[2]
+			Write-Log "Resolved path: $path"
+		}
+	}
+
+	Start-Process powershell.exe -ArgumentList `
+		"-ExecutionPolicy Unrestricted -File `"$path`" -elevated" `
+		-Verb RunAs
+}
+
 function ConvertTo-ADPrivRows{
 	[CmdletBinding()]
 	param(
@@ -519,10 +537,7 @@ try{
 		}
 	}else{
 		Write-Log 'Elevating...'
-
-		Start-Process powershell.exe -ArgumentList `
-			"-ExecutionPolicy Unrestricted -File `"$PSCommandPath`" -elevated" `
-			-Verb RunAs
+		Invoke-Elevate
 	}
 }catch{
 	Write-Log 'Error:', $_ -Severity ERROR
