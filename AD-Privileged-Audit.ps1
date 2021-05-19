@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-05-16
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-05-19
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -25,7 +25,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-05-16'
+$version = '2021-05-19'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -62,7 +62,7 @@ function Write-Log{
 
 	# - https://stackoverflow.com/questions/38523369/write-host-vs-write-information-in-powershell-5
 	# - https://blog.kieranties.com/2018/03/26/write-information-with-colours
-	Write-Information $([System.Management.Automation.HostInformationMessage]@{
+	Write-Information ([System.Management.Automation.HostInformationMessage]@{
 		Message = $msg
 		ForegroundColor = $color
 	})
@@ -384,7 +384,7 @@ function Invoke-Reports(){
 	$filePattern = $ctx.filePattern = Join-Path $reportsFolder `
 		($domain.DNSRoot +
 			'{0}-' +
-			$(Get-Date -Date $now -Format 'yyyy-MM-dd'))
+			(Get-Date -Date $now -Format 'yyyy-MM-dd'))
 	Write-Log ('$filePattern: {0}' -f $filePattern)
 
 	Write-Log 'Checking for execution as Domain Administrator...'
