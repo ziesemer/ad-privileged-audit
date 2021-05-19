@@ -18,7 +18,8 @@ Param(
 	[Parameter(ParameterSetName='elevated')]
 	[switch]$noFiles,
 	[Parameter(ParameterSetName='elevated')]
-	[switch]$noZip
+	[switch]$noZip,
+	[switch]$PassThru
 )
 
 Set-StrictMode -Version Latest
@@ -158,7 +159,10 @@ function Out-ADReports{
 			$caption += 0
 		}
 		Write-Log $caption
-		$ctx.reports.$name = $results
+		# Reduce unnecessary memory usage in large directories with large reports.
+		if($ctx.params.passThru){
+			$ctx.reports.$name = $results
+		}
 		$path = ($ctx.filePattern -f ('-' + $name)) + '.csv'
 		if($results){
 			if(!$noFiles){
@@ -348,6 +352,7 @@ function Invoke-Reports(){
 			domain = $null
 			psExe = (Get-Process -Id $PID).Path
 			psVersionTable = $PSVersionTable
+			passThru = $PassThru
 		}
 		reports = [ordered]@{}
 		reportFiles = @()
@@ -529,7 +534,9 @@ function Invoke-Reports(){
 		Compress-Archive -Path $ctx.reportFiles -DestinationPath ($filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
-	return [PSCustomObject]$ctx
+	if($PassThru){
+		return [PSCustomObject]$ctx
+	}
 }
 
 try{
