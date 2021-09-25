@@ -438,6 +438,8 @@ function Invoke-Reports(){
 			'GroupCategory', 'GroupScope', 'groupType'},
 		@{type='class'; class='group', 'computer'; props=
 			'ManagedBy'},
+		@{type='class'; class='computer'; props=
+			'OperatingSystem', 'OperatingSystemVersion', 'OperatingSystemServicePack', 'OperatingSystemHotfix'},
 		'ObjectClass', 'ObjectGUID', 'mS-DS-ConsistencyGuid',
 		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
@@ -508,6 +510,27 @@ function Invoke-Reports(){
 		| Sort-Object -Property 'lastLogonTimestamp' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
 		| Out-ADReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
+
+	# Computers with unsupported operating systems...
+
+	Get-ADComputer `
+			-Filter {
+				Enabled -eq $true -and (OperatingSystem -like 'Windows*')
+			} `
+			-Properties $ctx.adProps.compIn `
+		| ForEach-Object {
+			$osVer = $_.OperatingSystemVersion -split ' '
+			$osVer1 = [decimal]$osVer[0]
+			if($_.OperatingSystem.StartsWith('Windows Server')){
+				if($osVer1 -lt 6.2){
+					$_
+				}
+			}elseif($osVer1 -lt 6.3){
+				$_
+			}
+		} | Sort-Object -Property 'OperatingSystemVersion' `
+		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
+		| Out-ADReports -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems'
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
