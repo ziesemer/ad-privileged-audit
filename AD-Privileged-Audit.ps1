@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-05-19
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-09-25
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -26,7 +26,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-05-19'
+$version = '2021-09-25'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -424,10 +424,12 @@ function Invoke-Reports(){
 		'DistinguishedName', 'sAMAccountName', 
 		'DisplayName', 'Description',
 		@{type='class'; class='user', 'computer'; props=
-			'UserPrincipalName', 'Company', 'Title', 'Department', 'EmployeeID', 'EmployeeNumber',
+			'UserPrincipalName', 'Company', 'Title', 'Department', 'Manager', 'EmployeeID', 'EmployeeNumber',
 			'PrimaryGroupID', 'PrimaryGroup'},
 		@{type='class'; class='group'; props=
 			'GroupCategory', 'GroupScope', 'groupType'},
+		@{type='class'; class='group', 'computer'; props=
+			'ManagedBy'},
 		'ObjectClass', 'ObjectGUID',
 		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
