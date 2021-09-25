@@ -122,7 +122,11 @@ function ConvertTo-ADPrivRows{
 					$null
 				}
 			}
-			$out.$_ = $row.$_
+			if($_ -ieq 'mS-DS-ConsistencyGuid'){
+				$out.$_ = [System.Convert]::ToBase64String($row.$_)
+			}else{
+				$out.$_ = $row.$_
+			}
 		}
 		# The Select-Object here must be called only after the the object is re-created above,
 		#   including null properties for the columns requested,
@@ -430,7 +434,7 @@ function Invoke-Reports(){
 			'GroupCategory', 'GroupScope', 'groupType'},
 		@{type='class'; class='group', 'computer'; props=
 			'ManagedBy'},
-		'ObjectClass', 'ObjectGUID',
+		'ObjectClass', 'ObjectGUID', 'mS-DS-ConsistencyGuid',
 		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
 	function Get-ADProps([string]$class, [switch]$generated){
