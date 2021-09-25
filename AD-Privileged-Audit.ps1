@@ -287,6 +287,8 @@ function Invoke-ADPrivGroups($ctx){
 		'DnsUpdateProxy' = $null
 		'DHCP Administrators' = $null
 		'Domain Controllers' = $dsid + '516'
+		'Enterprise Read-Only Domain Controllers' = $dsid + '498'
+		'Read-Only Domain Controllers' = $dsid + '521'
 	}
 
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
@@ -520,13 +522,28 @@ function Invoke-Reports(){
 		}
 	
 		Invoke-LAPSReport {
-					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
+					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 				} `
-			| Out-ADReports -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
+			| Where-Object {
+				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
+			} | Out-ADReports -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
 		Invoke-LAPSReport {
-					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now)
+					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 				} `
 			| Out-ADReports -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.'
+
+		@(Get-ADComputer -Filter {
+			Enabled -eq $true
+				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')
+				-and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)
+		}) + @(Get-ADComputer -Filter {
+			Enabled -eq $true
+				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')
+		} -SearchBase $domain.DomainControllersContainer) `
+			| Sort-Object -Unique DistinguishedName `
+			| ForEach-Object{
+				Write-Log "LAPS found on possible domain controller: $($_.DistinguishedName)" -Severity WARN
+			}
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
