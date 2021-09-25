@@ -258,8 +258,9 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 	}
 
 	if($group.GroupScope -ne 'DomainLocal'){
-		Get-ADUser -Filter ('PrimaryGroup -eq ''' + $group.DistinguishedName + '''') `
-				-Properties $ctx.adProps.userIn `
+		# Simply otherwise calling Get-ADObject here fails to return the computer objects.
+		@(Get-ADUser -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.userIn) `
+			+ @(Get-ADComputer -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.compIn) `
 			| New-ADGroupMemberContext
 	}
 }
