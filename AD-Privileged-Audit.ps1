@@ -276,6 +276,7 @@ function Invoke-ADPrivGroups($ctx){
 		'Schema Admins' = $dsid + '518'
 		'Account Operators' = 'S-1-5-32-548'
 		'Server Operators' = 'S-1-5-32-549'
+		'Print Operators' = 'S-1-5-32-550'
 		'Backup Operators' = 'S-1-5-32-551'
 		# DnsAdmins and DnsUpdateProxy are documented in the "dn579255" reference
 		#   above as having RIDs 1102/1103.
