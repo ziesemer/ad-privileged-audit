@@ -90,6 +90,61 @@ function Invoke-Elevate{
 		-Verb RunAs
 }
 
+function Get-ADPrivProps([string]$class, [switch]$generated){
+	$props = [System.Collections.ArrayList]::new()
+	function Expand-ADProp($p){
+		if($p -is [string]){
+			[void]$props.Add($p)
+		}elseif($p -is [array]){
+			$p | ForEach-Object{
+				Expand-ADProp $_
+			}
+		}elseif($p.type -ceq 'class'){
+			if(!$class -or $class -in $p.class){
+				Expand-ADProp $p.props
+			}
+		}elseif($p.type -ceq 'generated'){
+			if($generated){
+				Expand-ADProp $p.props
+			}
+		}else{
+			throw "Unhandled property type: $($p.type)"
+		}
+	}
+
+	Expand-ADProp $ctx.adProps.source
+	return $props
+}
+
+function Set-ADPrivProps($ctx){
+	# - https://docs.microsoft.com/en-us/windows/win32/adschema/classes-all
+	$ctx.adProps.source = 'objectSid', 'Name',
+		@{type='class'; class='user', 'computer'; props=
+			'Enabled',
+			@{type='generated'; props='lastLogonTimestampDate'}, 'lastLogonTimestamp',
+			'PasswordLastSet', 'PasswordNeverExpires', 'CannotChangePassword'
+		},
+		'whenCreated', 'whenChanged',
+		'DistinguishedName', 'sAMAccountName', 
+		'DisplayName', 'Description',
+		@{type='class'; class='user', 'computer'; props=
+			'UserPrincipalName', 'Company', 'Title', 'Department', 'Manager', 'EmployeeID', 'EmployeeNumber',
+			'PrimaryGroupID', 'PrimaryGroup'},
+		@{type='class'; class='group'; props=
+			'GroupCategory', 'GroupScope', 'groupType'},
+		@{type='class'; class='group', 'computer'; props=
+			'ManagedBy'},
+		@{type='class'; class='computer'; props=
+			'OperatingSystem', 'OperatingSystemVersion', 'OperatingSystemServicePack', 'OperatingSystemHotfix'},
+		'ObjectClass', 'ObjectGUID', 'mS-DS-ConsistencyGuid',
+		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
+
+	$ctx.adProps.userIn = Get-ADPrivProps 'user'
+	$ctx.adProps.userOut = Get-ADPrivProps 'user' -generated
+	$ctx.adProps.compIn = Get-ADPrivProps 'computer'
+	$ctx.adProps.compOut = Get-ADPrivProps 'computer' -generated
+}
+
 function ConvertTo-ADPrivRows{
 	[CmdletBinding()]
 	param(
@@ -136,7 +191,7 @@ function ConvertTo-ADPrivRows{
 	}
 }
 
-function Out-ADReports{
+function Out-ADPrivReports{
 	[CmdletBinding()]
 	param(
 		[Parameter(Mandatory, ValueFromPipeline)]
@@ -265,93 +320,7 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 	}
 }
 
-function Invoke-ADPrivGroups($ctx){
-	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
-	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
-	# - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
-	$dsid = $domain.DomainSID.Value + '-'
-	$groupsIn = [ordered]@{
-		'Domain Admins' = $dsid + '512'
-		'Enterprise Admins' = $dsid + '519'
-		'Administrators' = 'S-1-5-32-544'
-		'Schema Admins' = $dsid + '518'
-		'Account Operators' = 'S-1-5-32-548'
-		'Server Operators' = 'S-1-5-32-549'
-		'Print Operators' = 'S-1-5-32-550'
-		'Backup Operators' = 'S-1-5-32-551'
-		# DnsAdmins and DnsUpdateProxy are documented in the "dn579255" reference
-		#   above as having RIDs 1102/1103.
-		# However, I've also seen these as 1101/1102, and these are no longer
-		#  documented as "well-known" in current documentation.
-		'DnsAdmins' = $null
-		'DnsUpdateProxy' = $null
-		'DHCP Administrators' = $null
-		'Domain Controllers' = $dsid + '516'
-		'Enterprise Read-Only Domain Controllers' = $dsid + '498'
-		'Read-Only Domain Controllers' = $dsid + '521'
-	}
-
-	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
-	$ctx.adProps.allOut = Get-ADProps -generated
-	$ctx.adProps.objectIn = Get-ADProps 'object'
-	$ctx.adProps.groupIn = Get-ADProps 'group'
-	$ctx.adProps.groupOut = Get-ADProps 'group' -generated
-
-	function Get-ADPrivGroup($identity){
-		try{
-			return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
-		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
-			Write-Log $_ -Severity WARN
-		}
-	}
-
-	$groupsIn.GetEnumerator() | ForEach-Object{
-		$groupName = $_.Name
-		$expectedGroup = $_.Value
-
-		Write-Log "  - Processing group: $($groupName)..."
-
-		$group = Get-ADPrivGroup $groupName
-		$group
-		if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
-			Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
-					"  Also attempting as $($expectedGroup)..."
-				) -Severity WARN
-			$group = Get-ADPrivGroup $expectedGroup
-			$group
-		}
-	} | ForEach-Object{
-		$group = $_
-		[void]$groups.Add($group)
-
-		Get-ADGroupMemberSafe -identity $group -ctx $ctx | ForEach-Object{
-			$gm = $_
-			$x = [ordered]@{
-				GroupSid = $group.objectSid
-				GroupName = $group.Name
-			}
-
-			$gm.entry `
-					| Get-Member -MemberType Properties `
-					| Select-Object -ExpandProperty Name `
-					| ForEach-Object{
-				$x.$_ = $gm.entry.$_
-			}
-			$x.MemberEntry = $gm.entry
-			$x.MemberPathArray = $gm.path
-			$x.MemberPath = $gm.path -join '; '
-			$x.MemberDepth = $gm.path.Count
-
-			[PSCustomObject]$x
-		}
-	} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
-		| Out-ADReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
-
-	$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut `
-		| Out-ADReports -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups'
-}
-
-function Invoke-Reports(){
+function Invoke-ADPrivInit(){
 	$ctx = [ordered]@{
 		params = [ordered]@{
 			version = $version
@@ -421,58 +390,106 @@ function Invoke-Reports(){
 	$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
 	$ctx.reportFiles += $paramsJsonPath
 
-	# - https://docs.microsoft.com/en-us/windows/win32/adschema/classes-all
-	$commonAdProps = 'objectSid', 'Name',
-		@{type='class'; class='user', 'computer'; props=
-			'Enabled',
-			@{type='generated'; props='lastLogonTimestampDate'}, 'lastLogonTimestamp',
-			'PasswordLastSet', 'PasswordNeverExpires', 'CannotChangePassword'
-		},
-		'whenCreated', 'whenChanged',
-		'DistinguishedName', 'sAMAccountName', 
-		'DisplayName', 'Description',
-		@{type='class'; class='user', 'computer'; props=
-			'UserPrincipalName', 'Company', 'Title', 'Department', 'Manager', 'EmployeeID', 'EmployeeNumber',
-			'PrimaryGroupID', 'PrimaryGroup'},
-		@{type='class'; class='group'; props=
-			'GroupCategory', 'GroupScope', 'groupType'},
-		@{type='class'; class='group', 'computer'; props=
-			'ManagedBy'},
-		@{type='class'; class='computer'; props=
-			'OperatingSystem', 'OperatingSystemVersion', 'OperatingSystemServicePack', 'OperatingSystemHotfix'},
-		'ObjectClass', 'ObjectGUID', 'mS-DS-ConsistencyGuid',
-		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
+	Set-ADPrivProps $ctx
 
-	function Get-ADProps([string]$class, [switch]$generated){
-		$props = [System.Collections.ArrayList]::new()
-		function Expand-ADProp($p){
-			if($p -is [string]){
-				[void]$props.Add($p)
-			}elseif($p -is [array]){
-				$p | ForEach-Object{
-					Expand-ADProp $_
-				}
-			}elseif($p.type -ceq 'class'){
-				if(!$class -or $class -in $p.class){
-					Expand-ADProp $p.props
-				}
-			}elseif($p.type -ceq 'generated'){
-				if($generated){
-					Expand-ADProp $p.props
-				}
-			}else{
-				throw "Unhandled property type: $($p.type)"
-			}
-		}
+	return $ctx
+}
 
-		Expand-ADProp $commonAdProps
-		return $props
+function Invoke-ADPrivGroups($ctx){
+	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
+	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
+	# - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
+	$dsid = $ctx.params.domain.DomainSID.Value + '-'
+	$groupsIn = [ordered]@{
+		'Domain Admins' = $dsid + '512'
+		'Enterprise Admins' = $dsid + '519'
+		'Administrators' = 'S-1-5-32-544'
+		'Schema Admins' = $dsid + '518'
+		'Account Operators' = 'S-1-5-32-548'
+		'Server Operators' = 'S-1-5-32-549'
+		'Print Operators' = 'S-1-5-32-550'
+		'Backup Operators' = 'S-1-5-32-551'
+		# DnsAdmins and DnsUpdateProxy are documented in the "dn579255" reference
+		#   above as having RIDs 1102/1103.
+		# However, I've also seen these as 1101/1102, and these are no longer
+		#  documented as "well-known" in current documentation.
+		'DnsAdmins' = $null
+		'DnsUpdateProxy' = $null
+		'DHCP Administrators' = $null
+		'Domain Controllers' = $dsid + '516'
+		'Enterprise Read-Only Domain Controllers' = $dsid + '498'
+		'Read-Only Domain Controllers' = $dsid + '521'
 	}
 
-	$ctx.adProps.userIn = Get-ADProps 'user'
-	$ctx.adProps.userOut = Get-ADProps 'user' -generated
-	$ctx.adProps.compIn = Get-ADProps 'computer'
-	$ctx.adProps.compOut = Get-ADProps 'computer' -generated
+	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
+	$ctx.adProps.allOut = Get-ADPrivProps -generated
+	$ctx.adProps.objectIn = Get-ADPrivProps 'object'
+	$ctx.adProps.groupIn = Get-ADPrivProps 'group'
+	$ctx.adProps.groupOut = Get-ADPrivProps 'group' -generated
+
+	function Get-ADPrivGroup($identity){
+		try{
+			return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
+		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
+			Write-Log $_ -Severity WARN
+		}
+	}
+
+	$groupsIn.GetEnumerator() | ForEach-Object{
+		$groupName = $_.Name
+		$expectedGroup = $_.Value
+
+		Write-Log "  - Processing group: $($groupName)..."
+
+		$group = Get-ADPrivGroup $groupName
+		$group
+		if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
+			Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
+					"  Also attempting as $($expectedGroup)..."
+				) -Severity WARN
+			$group = Get-ADPrivGroup $expectedGroup
+			$group
+		}
+	} | ForEach-Object{
+		$group = $_
+		[void]$groups.Add($group)
+
+		Get-ADGroupMemberSafe -identity $group -ctx $ctx | ForEach-Object{
+			$gm = $_
+			$x = [ordered]@{
+				GroupSid = $group.objectSid
+				GroupName = $group.Name
+			}
+
+			$gm.entry `
+					| Get-Member -MemberType Properties `
+					| Select-Object -ExpandProperty Name `
+					| ForEach-Object{
+				$x.$_ = $gm.entry.$_
+			}
+			$x.MemberEntry = $gm.entry
+			$x.MemberPathArray = $gm.path
+			$x.MemberPath = $gm.path -join '; '
+			$x.MemberDepth = $gm.path.Count
+
+			[PSCustomObject]$x
+		}
+	} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
+		| Out-ADPrivReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
+
+	$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut `
+		| Out-ADPrivReports -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups'
+}
+
+function Invoke-ADPrivReports(){
+	$ctx = Invoke-ADPrivInit
+
+	# Filters support only "simple variable references", no expressions unless shortcutted here.
+	# - https://stackoverflow.com/a/44184818/751158
+
+	$now = $ctx.params.now
+	$filterDate = $ctx.params.filterDate
+	$filterDatePassword = $ctx.params.filterDatePassword
 
 	# Privileged AD Groups and Members...
 
@@ -487,7 +504,7 @@ function Invoke-Reports(){
 			-Properties $ctx.adProps.userIn `
 		| Sort-Object -Property 'lastLogonTimestamp' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
-		| Out-ADReports -ctx $ctx -name 'staleUsers' -title 'Stale Users'
+		| Out-ADPrivReports -ctx $ctx -name 'staleUsers' -title 'Stale Users'
 
 	# Users with passwords older than # days...
 
@@ -498,7 +515,7 @@ function Invoke-Reports(){
 			-Properties $ctx.adProps.userIn `
 		| Sort-Object -Property 'PasswordLastSet' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
-		| Out-ADReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
+		| Out-ADPrivReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
 
 	# Computers that haven't logged-in within # days...
 
@@ -509,7 +526,7 @@ function Invoke-Reports(){
 			-Properties $ctx.adProps.compIn `
 		| Sort-Object -Property 'lastLogonTimestamp' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
-		| Out-ADReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
+		| Out-ADPrivReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
 
 	# Computers with unsupported operating systems...
 
@@ -530,7 +547,7 @@ function Invoke-Reports(){
 			}
 		} | Sort-Object -Property 'OperatingSystemVersion' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
-		| Out-ADReports -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems'
+		| Out-ADPrivReports -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems'
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
@@ -548,12 +565,12 @@ function Invoke-Reports(){
 					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 				} `
 			| Where-Object {
-				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
-			} | Out-ADReports -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
+				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
+			} | Out-ADPrivReports -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
 		Invoke-LAPSReport {
 					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 				} `
-			| Out-ADReports -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.'
+			| Out-ADPrivReports -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.'
 
 		@(Get-ADComputer -Filter {
 			Enabled -eq $true
@@ -562,7 +579,7 @@ function Invoke-Reports(){
 		}) + @(Get-ADComputer -Filter {
 			Enabled -eq $true
 				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')
-		} -SearchBase $domain.DomainControllersContainer) `
+		} -SearchBase $ctx.params.domain.DomainControllersContainer) `
 			| Sort-Object -Unique DistinguishedName `
 			| ForEach-Object{
 				Write-Log "LAPS found on possible domain controller: $($_.DistinguishedName)" -Severity WARN
@@ -575,11 +592,11 @@ function Invoke-Reports(){
 
 	$warnings `
 		| ConvertTo-ADPrivRows `
-		| Out-ADReports -ctx $ctx -name 'warnings' -title 'Warnings'
+		| Out-ADPrivReports -ctx $ctx -name 'warnings' -title 'Warnings'
 
 	if(!($noFiles -or $noZip)){
 		Write-Log 'Creating compressed archive...'
-		Compress-Archive -Path $ctx.reportFiles -DestinationPath ($filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
+		Compress-Archive -Path $ctx.reportFiles -DestinationPath ($ctx.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
 	if($PassThru){
@@ -590,7 +607,7 @@ function Invoke-Reports(){
 try{
 	if($elevated){
 		Import-Module ActiveDirectory
-		Invoke-Reports
+		Invoke-ADPrivReports
 		Write-Log 'Done!'
 		if($interactive){
 			Pause
