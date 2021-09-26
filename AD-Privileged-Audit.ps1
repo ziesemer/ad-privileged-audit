@@ -528,6 +528,17 @@ function Invoke-ADPrivReports(){
 	| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
 	| Out-ADPrivReports -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required'
 
+	# Users with SIDHistory...
+
+	Get-ADUser `
+		-Filter {
+			SIDHistory -like '*'
+		} `
+		-Properties $ctx.adProps.userIn `
+	| Sort-Object -Property 'UserPrincipalName' `
+	| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
+	| Out-ADPrivReports -ctx $ctx -name 'sidHistory' -title 'SID History'
+
 	# Computers that haven't logged-in within # days...
 
 	Get-ADComputer `
