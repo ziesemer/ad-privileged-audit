@@ -122,7 +122,7 @@ function Set-ADPrivProps($ctx){
 		@{type='class'; class='user', 'computer'; props=
 			'Enabled',
 			@{type='generated'; props='lastLogonTimestampDate'}, 'lastLogonTimestamp',
-			'PasswordLastSet', 'PasswordNeverExpires', 'CannotChangePassword'
+			'PasswordLastSet', 'LastBadPasswordAttempt', 'PasswordExpired', 'PasswordNeverExpires', 'PasswordNotRequired', 'CannotChangePassword', 'userAccountControl'
 		},
 		'whenCreated', 'whenChanged',
 		'DistinguishedName', 'sAMAccountName', 
@@ -516,6 +516,17 @@ function Invoke-ADPrivReports(){
 		| Sort-Object -Property 'PasswordLastSet' `
 		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
 		| Out-ADPrivReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
+
+	# Users with PasswordNotRequired set...
+
+	Get-ADUser `
+		-Filter {
+			PasswordNotRequired -eq $true
+		} `
+		-Properties $ctx.adProps.userIn `
+	| Sort-Object -Property 'UserPrincipalName' `
+	| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
+	| Out-ADPrivReports -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required'
 
 	# Computers that haven't logged-in within # days...
 
