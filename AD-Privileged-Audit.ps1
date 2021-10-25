@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-09-25
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-10-24
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -26,7 +26,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-09-25'
+$version = '2021-10-24'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -345,7 +345,9 @@ function Invoke-ADPrivInit(){
 	}
 	$ctx.params.reportsFolder = $reportsFolder
 	Write-Log ('$reportsFolder: {0}' -f $reportsFolder)
-	[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
+	if(!$noFiles){
+		[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
+	}
 
 	# This doesn't affect Out-GridView, which falls back to the current user preferences in Windows.
 	$currentThread = [System.Threading.Thread]::CurrentThread
@@ -384,11 +386,13 @@ function Invoke-ADPrivInit(){
 			'  Results may be incomplete!') -Severity WARN
 	}
 
-	Write-Log 'Writing parameters JSON file...'
+	if(!$noFiles){
+		Write-Log 'Writing parameters JSON file...'
 
-	$paramsJsonPath = $filePattern -f '-params' + '.json'
-	$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
-	$ctx.reportFiles += $paramsJsonPath
+		$paramsJsonPath = $filePattern -f '-params' + '.json'
+		$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
+		$ctx.reportFiles += $paramsJsonPath
+	}
 
 	Set-ADPrivProps $ctx
 
