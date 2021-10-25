@@ -1,4 +1,5 @@
 .*
 /*.code-workspace
+!/ad-privileged-audit.code-workspace
 !.gitattributes
 !.gitignore
