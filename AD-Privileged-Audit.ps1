@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-10-24
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-11-03
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -126,10 +126,13 @@ function Set-ADPrivProps($ctx){
 			'PasswordLastSet', 'LastBadPasswordAttempt', 'PasswordExpired', 'PasswordNeverExpires', 'PasswordNotRequired', 'CannotChangePassword', 'userAccountControl'
 		},
 		'whenCreated', 'whenChanged',
-		'DistinguishedName', 'sAMAccountName', 
+		@{type='class'; class='user', 'computer'; props=
+			'UserPrincipalName'
+		},
+		'sAMAccountName', 'DistinguishedName', 'CanonicalName', 
 		'DisplayName', 'Description',
 		@{type='class'; class='user', 'computer'; props=
-			'UserPrincipalName', 'Company', 'Title', 'Department', 'Manager', 'EmployeeID', 'EmployeeNumber',
+			'Company', 'Title', 'Department', 'Manager', 'EmployeeID', 'EmployeeNumber',
 			'PrimaryGroupID', 'PrimaryGroup'},
 		@{type='class'; class='group'; props=
 			'GroupCategory', 'GroupScope', 'groupType'},
