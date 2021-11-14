@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-11-03
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-11-14
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -245,6 +245,44 @@ function Out-ADPrivReports{
 	}
 }
 
+function Get-ADPrivObjectCache($identity, $class, $ctx){
+	$cache = $ctx.adPrivGroupsObjCache
+	# Had considered using a flat cache to the identity - ignoring class.
+	# However, loading as a generic "object" is sometimes first required to determine the object's class
+	# - which is then missing the object-class's specific attributes, without incurring a sometimes-unnecessary eager lookup.
+	$classCache = $cache[$class]
+
+	if($identity -is [string]){
+		$cacheKey = $identity
+	}else{
+		$cacheKey = $identity.DistinguishedName
+	}
+	$result = $classCache[$cacheKey]
+	if(!$result){
+		# Also store each result into more-generic "object" class cache to improve cache hits.
+		if($class -ceq 'user'){
+			$result = $identity | Get-ADUser -Properties $ctx.adProps.userIn
+			$cache['object'][$cacheKey] = $result
+		}elseif($class -ceq 'computer'){
+			$result = $identity | Get-ADComputer -Properties $ctx.adProps.compIn
+			$cache['object'][$cacheKey] = $result
+		}elseif($class -ceq 'group'){
+			$result = $identity | Get-ADGroup -Properties ($ctx.adProps.groupIn + 'Members')
+			$cache['object'][$cacheKey] = $result
+		}elseif($class -ceq 'object'){
+			$result = $identity | Get-ADObject -Properties $ctx.adProps.objectIn
+		}elseif($class -ceq '@PrimaryGroupMembers'){
+			# Simply otherwise calling Get-ADObject here fails to return the computer objects.
+			$result = @(Get-ADUser -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.userIn) `
+				+ @(Get-ADComputer -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.compIn)
+		}else{
+			throw "Unhandled cache type: $class"
+		}
+		$classCache[$cacheKey] = $result
+	}
+	return $result
+}
+
 <#
 .SYNOPSIS
 	Required over the ActiveDirectory module's Get-ADGroupMember to avoid failures when ForeignSecurityPrinciples are included -
@@ -257,7 +295,7 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 			-f $identity) `
 		-Severity DEBUG
 
-	$group = $identity | Get-ADGroup -Properties ($ctx.adProps.groupIn + 'Members')
+	$group = Get-ADPrivObjectCache $identity 'group' $ctx
 
 	if(!$path){
 		$path = @($group.DistinguishedName)
@@ -279,9 +317,9 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 
 	$group `
 		| Select-Object -ExpandProperty Members `
-		| Get-ADObject -PipelineVariable gm `
 		| ForEach-Object{
 
+		$gm = Get-ADPrivObjectCache $_ 'object' $ctx
 		$oc = $gm.objectClass
 
 		Write-Log ('    Member: gm={0}, oc={1}, group={2}' `
@@ -289,11 +327,11 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 			-Severity DEBUG
 
 		if($oc -ceq 'user'){
-			$gm | Get-ADUser -Properties $ctx.adProps.userIn | New-ADGroupMemberContext
+			Get-ADPrivObjectCache $gm 'user' $ctx | New-ADGroupMemberContext
 		}elseif($oc -ceq 'computer'){
-			$gm | Get-ADComputer -Properties $ctx.adProps.compIn | New-ADGroupMemberContext
+			Get-ADPrivObjectCache $gm 'computer' $ctx | New-ADGroupMemberContext
 		}elseif($oc -ceq 'group'){
-			$gm | Get-ADGroup -Properties $ctx.adProps.groupIn | New-ADGroupMemberContext
+			Get-ADPrivObjectCache $gm 'group' $ctx | New-ADGroupMemberContext
 			$dn = $gm.DistinguishedName
 			if($path -contains $dn){
 				Write-Log ('ADGroupMemberSafe Circular Reference: "{0}" already in "{1}".' `
@@ -312,15 +350,12 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 						-f $oc, $gm.DistinguishedName) `
 					-Severity WARN
 			}
-			$gm | Get-ADObject -Properties $ctx.adProps.objectIn | New-ADGroupMemberContext
+			Get-ADPrivObjectCache $gm 'object' $ctx | New-ADGroupMemberContext
 		}
 	}
 
 	if($group.GroupScope -ne 'DomainLocal'){
-		# Simply otherwise calling Get-ADObject here fails to return the computer objects.
-		@(Get-ADUser -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.userIn) `
-			+ @(Get-ADComputer -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.compIn) `
-			| New-ADGroupMemberContext
+		Get-ADPrivObjectCache $group '@PrimaryGroupMembers' $ctx | New-ADGroupMemberContext
 	}
 }
 
@@ -435,6 +470,11 @@ function Invoke-ADPrivGroups($ctx){
 	$ctx.adProps.groupIn = Get-ADPrivProps 'group'
 	$ctx.adProps.groupOut = Get-ADPrivProps 'group' -generated
 
+	$ctx.adPrivGroupsObjCache = @{}
+	foreach($cacheKey in @('user', 'computer', 'group', 'object', '@PrimaryGroupMembers')){
+		$ctx.adPrivGroupsObjCache[$cacheKey] = @{}
+	}
+
 	function Get-ADPrivGroup($identity){
 		try{
 			return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
@@ -484,6 +524,8 @@ function Invoke-ADPrivGroups($ctx){
 		}
 	} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
 		| Out-ADPrivReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
+
+	$ctx.adPrivGroupsObjCache = $null
 
 	$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut `
 		| Out-ADPrivReports -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups'
