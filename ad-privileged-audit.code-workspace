@@ -8,7 +8,9 @@
 		"recommendations": [
 			"ms-vscode.powershell",
 			"davidanson.vscode-markdownlint",
-			"bierner.markdown-preview-github-styles"
+			"bierner.markdown-preview-github-styles",
+			"pspester.pester-test",
+			"ryanluker.vscode-coverage-gutters"
 		]
 	},
 	"settings": {}

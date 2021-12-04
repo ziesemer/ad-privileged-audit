@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-11-14
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-12-04
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-10-24'
+$version = '2021-12-04'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -676,24 +676,30 @@ function Invoke-ADPrivReports(){
 	}
 }
 
-try{
-	if($elevated){
-		Import-Module ActiveDirectory
-		Invoke-ADPrivReports
-		Write-Log 'Done!'
-		if($interactive){
-			Pause
+function Invoke-ADPrivMain(){
+	try{
+		if($elevated){
+			Import-Module ActiveDirectory
+			Invoke-ADPrivReports
+			Write-Log 'Done!'
+			if($interactive){
+				Pause
+			}
+		}else{
+			Write-Log 'Elevating...'
+			Invoke-Elevate
 		}
-	}else{
-		Write-Log 'Elevating...'
-		Invoke-Elevate
+	}catch{
+		Write-Log 'Error:', $_ -Severity ERROR
+		if($interactive){
+			$_ | Format-List -Force
+			Pause
+		}else{
+			throw $_
+		}
 	}
-}catch{
-	Write-Log 'Error:', $_ -Severity ERROR
-	if($interactive){
-		$_ | Format-List -Force
-		Pause
-	}else{
-		throw $_
-	}
+}
+
+if($MyInvocation.InvocationName -ne '.'){
+	Invoke-ADPrivMain
 }

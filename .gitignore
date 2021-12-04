@@ -3,3 +3,4 @@
 !/ad-privileged-audit.code-workspace
 !.gitattributes
 !.gitignore
+coverage.xml
