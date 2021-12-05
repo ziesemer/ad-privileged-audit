@@ -13,5 +13,7 @@
 			"ryanluker.vscode-coverage-gutters"
 		]
 	},
-	"settings": {}
+	"settings": {
+		"files.trimTrailingWhitespace": true
+	}
 }

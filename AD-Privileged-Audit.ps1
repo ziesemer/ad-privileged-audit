@@ -129,7 +129,7 @@ function Set-ADPrivProps($ctx){
 		@{type='class'; class='user', 'computer'; props=
 			'UserPrincipalName'
 		},
-		'sAMAccountName', 'DistinguishedName', 'CanonicalName', 
+		'sAMAccountName', 'DistinguishedName', 'CanonicalName',
 		'DisplayName', 'Description',
 		@{type='class'; class='user', 'computer'; props=
 			'Company', 'Title', 'Department', 'Manager', 'EmployeeID', 'EmployeeNumber',
@@ -632,7 +632,7 @@ function Invoke-ADPrivReports(){
 				| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
 					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
-	
+
 		Invoke-LAPSReport {
 					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 				} `
