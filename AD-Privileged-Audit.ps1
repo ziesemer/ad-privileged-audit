@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-12-04
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-12-27
 # SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-12-04'
+$version = '2021-12-27'
 $interactive = !$batch
 
 $warnings = [System.Collections.ArrayList]::new()
@@ -245,6 +245,113 @@ function Out-ADPrivReports{
 	}
 }
 
+<#
+	.SYNOPSIS
+		Parses RFC-2253 Distinguished Names into a list of ValueTuples.
+		Required as there is no equivilent functionality publicly and readily-available to .Net or PowerShell as of this development without including 3rd-party libraries.
+		(Beyond needing to introduce 3rd-party dependencies into this script, the available 3rd-party libraries reviewed would introduce further concerns
+			- including that many would not even pass the unit tests included in this project, along with performance concerns, etc.)
+	.NOTES
+		Thread Safety: Instances of this class are absolutely *not* thread-safe.
+			If used by multiple threads, each thread must use its own instance of this class.
+#>
+class DistinguishedNameParser{
+	[System.Collections.Generic.IList[System.ValueTuple[string, string]]]$_names `
+    = [System.Collections.Generic.List[System.ValueTuple[string, string]]]::new(8)
+	[System.Text.StringBuilder]$_sb = [System.Text.StringBuilder]::new(32)
+	[byte[]]$_utfBytes = [byte[]]::new(4)
+
+	[bool]IsHex([char]$c){
+		return ($c -cge '0' -and $c -cle '9') `
+			-or ($c -cge 'A' -and $c -cle 'F') `
+			-or ($c -cge 'a' -and $c -cle 'f')
+	}
+
+	[System.Collections.Generic.IList[System.ValueTuple[string, string]]]Split([string]$dn){
+		[System.Collections.Generic.IList[System.ValueTuple[string, string]]]$names = $this._names
+		[System.Text.StringBuilder]$sb = $this._sb
+		[byte[]]$utfBytes = $this._utfBytes
+
+		[byte]$utfBytesPos = 0
+		[int]$dnLen = $dn.Length
+		[string]$typePart = $null
+		[string]$valuePart = $null
+		[bool]$inType = $true
+
+		$names.Clear()
+		$sb.Clear()
+
+		:charLoop for($pos = 0; $pos -lt $dnLen){
+			$c = $dn[$pos++]
+			while($c -ceq '\' -and $pos -lt $dnLen){
+				$c1 = $dn[$pos++]
+				if($this.IsHex($c1) -and $pos -lt $dnLen){
+					$c2 = $dn[$pos++]
+					if($this.IsHex($c2)){
+						# Growing the byte array may be necessary as an unknown number of consecutive escaped byte values could be received,
+						#   and without attempting to inspect each UTF-8 byte to determine the number of bytes per character.
+						if($utfBytes.Length -eq $utfBytesPos){
+							[byte[]]$utfBytes2 = [byte[]]::new($utfBytes.Length * 2)
+							[array]::Copy($utfBytes, $utfBytes2, $utfBytesPos)
+							$this._utfBytes = $utfBytes = $utfBytes2
+						}
+						$utfBytes[$utfBytesPos++] = [convert]::ToInt16($c1 + $c2, 16)
+
+						if($pos -lt $dnLen){
+							$c = $dn[$pos++]
+							continue
+						}else{
+							$sb.Append([System.Text.Encoding]::UTF8.GetString($utfBytes, 0, $utfBytesPos))
+							$utfBytesPos = 0
+						}
+					}else{
+						throw 'Invalid unicode escape!'
+					}
+				}else{
+					$sb.Append($c1)
+				}
+				continue charLoop
+			}
+			if($utfBytesPos){
+				$sb.Append([System.Text.Encoding]::UTF8.GetString($utfBytes, 0, $utfBytesPos))
+				$utfBytesPos = 0
+			}
+			if($c -ceq '='){
+				$inType = $false
+				$typePart = $sb.ToString()
+				$sb.Clear()
+				continue
+			}
+			if($c -ceq ','){
+				$inType = $true
+				$valuePart = $sb.ToString()
+				$sb.Clear()
+				$names.Add([System.ValueTuple]::Create($typePart, $valuePart))
+				continue
+			}
+			$sb.Append($c)
+		}
+		$valuePart = $sb.ToString()
+		if($typePart.Length -or $valuePart.Length){
+			$names.Add([System.ValueTuple]::Create($typePart, $valuePart))
+		}
+
+		return $names
+	}
+
+	[string]GetDnsDomain([System.Collections.Generic.IList[System.ValueTuple[string, string]]]$rdns){
+		return ($rdns | Where-Object{$_.Item1 -ieq 'DC'} | ForEach-Object{$_.Item2}) -join '.'
+	}
+}
+
+function Initialize-ADPrivObjectCache($ctx){
+	$ctx.adPrivGroupsObjCache = @{}
+	foreach($cacheKey in @('user', 'computer', 'group', 'object', '@PrimaryGroupMembers')){
+		$ctx.adPrivGroupsObjCache[$cacheKey] = @{}
+	}
+	$ctx.adPrivGroupsObjCache.dnParser = [DistinguishedNameParser]::new()
+}
+
 function Get-ADPrivObjectCache($identity, $class, $ctx){
 	$cache = $ctx.adPrivGroupsObjCache
 	# Had considered using a flat cache to the identity - ignoring class.
@@ -253,41 +360,48 @@ function Get-ADPrivObjectCache($identity, $class, $ctx){
 	$classCache = $cache[$class]
 
 	if($identity -is [string]){
-		$cacheKey = $identity
+		$id = $identity
 	}else{
-		$cacheKey = $identity.DistinguishedName
+		$id = $identity.DistinguishedName
 	}
-	$result = $classCache[$cacheKey]
+	$result = $classCache[$id]
 	if(!$result){
+		Write-Log -Severity DEBUG "Cache miss: $class $id"
+		$adParams = @{}
+		$dnsDomain = $cache.dnParser.GetDnsDomain($cache.dnParser.Split($id))
+		if($dnsDomain -ine $ctx.params.domain.DNSRoot){
+			$adParams['Server'] = $dnsDomain
+		}
+
 		# Also store each result into more-generic "object" class cache to improve cache hits.
 		if($class -ceq 'user'){
-			$result = $identity | Get-ADUser -Properties $ctx.adProps.userIn
-			$cache['object'][$cacheKey] = $result
+			$result = $identity | Get-ADUser @adParams -Properties $ctx.adProps.userIn
+			$cache['object'][$id] = $result
 		}elseif($class -ceq 'computer'){
-			$result = $identity | Get-ADComputer -Properties $ctx.adProps.compIn
-			$cache['object'][$cacheKey] = $result
+			$result = $identity | Get-ADComputer @adParams -Properties $ctx.adProps.compIn
+			$cache['object'][$id] = $result
 		}elseif($class -ceq 'group'){
-			$result = $identity | Get-ADGroup -Properties ($ctx.adProps.groupIn + 'Members')
-			$cache['object'][$cacheKey] = $result
+			$result = $identity | Get-ADGroup @adParams -Properties ($ctx.adProps.groupIn + 'Members')
+			$cache['object'][$id] = $result
 		}elseif($class -ceq 'object'){
-			$result = $identity | Get-ADObject -Properties $ctx.adProps.objectIn
+			$result = $identity | Get-ADObject @adParams -Properties $ctx.adProps.objectIn
 		}elseif($class -ceq '@PrimaryGroupMembers'){
 			# Simply otherwise calling Get-ADObject here fails to return the computer objects.
-			$result = @(Get-ADUser -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.userIn) `
-				+ @(Get-ADComputer -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.compIn)
+			$result = @(Get-ADUser @adParams -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.userIn) `
+				+ @(Get-ADComputer @adParams -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.compIn)
 		}else{
 			throw "Unhandled cache type: $class"
 		}
-		$classCache[$cacheKey] = $result
+		$classCache[$id] = $result
 	}
 	return $result
 }
 
 <#
-.SYNOPSIS
-	Required over the ActiveDirectory module's Get-ADGroupMember to avoid failures when ForeignSecurityPrinciples are included -
-		especially for unresolved or orphaned FSPs, or due to insufficient permissions in the foreign domain.
-	Also provides group details - including for potentially empty groups - and details the path by which entity is included.
+	.SYNOPSIS
+		Required over the ActiveDirectory module's Get-ADGroupMember to avoid failures when ForeignSecurityPrinciples are included -
+			especially for unresolved or orphaned FSPs, or due to insufficient permissions in the foreign domain.
+		Also provides group details - including for potentially empty groups - and details the path by which entity is included.
 #>
 function Get-ADGroupMemberSafe($identity, $ctx, $path){
 
@@ -470,10 +584,7 @@ function Invoke-ADPrivGroups($ctx){
 	$ctx.adProps.groupIn = Get-ADPrivProps 'group'
 	$ctx.adProps.groupOut = Get-ADPrivProps 'group' -generated
 
-	$ctx.adPrivGroupsObjCache = @{}
-	foreach($cacheKey in @('user', 'computer', 'group', 'object', '@PrimaryGroupMembers')){
-		$ctx.adPrivGroupsObjCache[$cacheKey] = @{}
-	}
+	Initialize-ADPrivObjectCache $ctx
 
 	function Get-ADPrivGroup($identity){
 		try{
