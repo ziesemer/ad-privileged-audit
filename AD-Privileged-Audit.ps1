@@ -93,7 +93,7 @@ function Invoke-Elevate{
 		-Verb RunAs
 }
 
-function Get-ADPrivProps([string]$class, [switch]$generated){
+function Resolve-ADPrivProps([string]$class, [switch]$generated){
 	$props = [System.Collections.ArrayList]::new()
 	function Expand-ADProp($p){
 		if($p -is [string]){
@@ -119,7 +119,7 @@ function Get-ADPrivProps([string]$class, [switch]$generated){
 	return $props
 }
 
-function Set-ADPrivProps($ctx){
+function Initialize-ADPrivProps($ctx){
 	# - https://docs.microsoft.com/en-us/windows/win32/adschema/classes-all
 	$ctx.adProps.source = 'objectSid', 'Name',
 		@{type='class'; class='user', 'computer'; props=
@@ -145,10 +145,10 @@ function Set-ADPrivProps($ctx){
 		'ObjectClass', 'ObjectGUID', 'mS-DS-ConsistencyGuid',
 		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
-	$ctx.adProps.userIn = Get-ADPrivProps 'user'
-	$ctx.adProps.userOut = Get-ADPrivProps 'user' -generated
-	$ctx.adProps.compIn = Get-ADPrivProps 'computer'
-	$ctx.adProps.compOut = Get-ADPrivProps 'computer' -generated
+	$ctx.adProps.userIn = Resolve-ADPrivProps 'user'
+	$ctx.adProps.userOut = Resolve-ADPrivProps 'user' -generated
+	$ctx.adProps.compIn = Resolve-ADPrivProps 'computer'
+	$ctx.adProps.compOut = Resolve-ADPrivProps 'computer' -generated
 }
 
 function ConvertTo-ADPrivRows{
@@ -585,7 +585,7 @@ function Initialize-ADPrivReports(){
 		$ctx.reportFiles += $paramsJsonPath
 	}
 
-	Set-ADPrivProps $ctx
+	Initialize-ADPrivProps $ctx
 
 	return $ctx
 }
@@ -617,10 +617,10 @@ function Invoke-ADPrivGroups($ctx){
 	}
 
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
-	$ctx.adProps.allOut = Get-ADPrivProps -generated
-	$ctx.adProps.objectIn = Get-ADPrivProps 'object'
-	$ctx.adProps.groupIn = Get-ADPrivProps 'group'
-	$ctx.adProps.groupOut = Get-ADPrivProps 'group' -generated
+	$ctx.adProps.allOut = Resolve-ADPrivProps -generated
+	$ctx.adProps.objectIn = Resolve-ADPrivProps 'object'
+	$ctx.adProps.groupIn = Resolve-ADPrivProps 'group'
+	$ctx.adProps.groupOut = Resolve-ADPrivProps 'group' -generated
 
 	Initialize-ADPrivObjectCache $ctx
 
