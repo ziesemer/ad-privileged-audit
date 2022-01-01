@@ -58,6 +58,15 @@ Describe 'AD-Privileged-Audit' {
 		Should -InvokeVerifiable
 	}
 
+	It 'Resolve-ADPrivProps' {
+		$ctx = @{
+			adProps = [ordered]@{}
+		}
+		Initialize-ADPrivProps $ctx
+		$ctx.adProps.source += @{type='invalidType'}
+		{Resolve-ADPrivProps 'user'} | Should -Throw 'Unhandled property type: invalidType'
+	}
+
 	Context 'With-Mock'{
 		BeforeAll {
 			function Get-ADPrivInteractive{
@@ -87,18 +96,22 @@ Describe 'AD-Privileged-Audit' {
 
 		It 'New-ADPrivReport-Empty' {
 			$ctx = Initialize-ADPrivReports
-			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {}
+			$oldCount = $ctx.reportFiles.Count
+			New-ADPrivReport -ctx $ctx -name 'sampleNameA' -title 'Sample Title' -dataSource {}
+			$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
 		}
 
 		It 'New-ADPrivReport-Sample' {
 			$ctx = Initialize-ADPrivReports
-			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {1}
+			$oldCount = $ctx.reportFiles.Count
+			New-ADPrivReport -ctx $ctx -name 'sampleNameB' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
+			$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
 		}
 
 		It 'New-ADPrivReport-NonInteractive' {
 			$ctx = Initialize-ADPrivReports
 			Mock Out-GridView {}
-			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {1}
+			New-ADPrivReport -ctx $ctx -name 'sampleNameC' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
 			Should -CommandName Out-GridView -Times 0
 		}
 
@@ -106,23 +119,23 @@ Describe 'AD-Privileged-Audit' {
 			$ctx = Initialize-ADPrivReports
 			Mock Get-ADPrivInteractive {$true}
 			Mock Out-GridView {}
-			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {'A1'}
+			New-ADPrivReport -ctx $ctx -name 'sampleNameD' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
 			Should -CommandName Out-GridView -Times 1
-			Should -CommandName Out-GridView -Times 1 -ParameterFilter {$title -eq 'Sample Title (sampleName): 1'}
+			Should -CommandName Out-GridView -Times 1 -ParameterFilter {$title -eq 'Sample Title (sampleNameD): 1'}
 		}
 
 		It 'Out-ADPrivReports-NoPassThru' {
 			$ctx = Initialize-ADPrivReports
-			'A1' | Out-ADPrivReports -ctx $ctx -name 'sampleName' -title 'Sample Title'
+			[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameE' -title 'Sample Title'
 			$ctx.reports.Count | Should -Be 0
 		}
 
 		It 'Out-ADPrivReports-PassThru' {
 			$ctx = Initialize-ADPrivReports
 			$ctx.params.passThru = $true
-			'A1' | Out-ADPrivReports -ctx $ctx -name 'sampleName' -title 'Sample Title'
+			[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameF' -title 'Sample Title'
 			$ctx.reports.Count | Should -Be 1
-			$ctx.reports['sampleName'][0] | Should -Be 'A1'
+			$ctx.reports['sampleNameF'][0].Name | Should -Be 'A1'
 		}
 
 		It 'ConvertTo-ADPrivRows' {

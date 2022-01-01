@@ -4,6 +4,9 @@
 			"path": "."
 		}
 	],
+	"files.problemsExclude": [
+		"**\\WindowsPowerShell\\Modules\\Pester\\**"
+	],
 	"extensions": {
 		"recommendations": [
 			"ms-vscode.powershell",
