@@ -1,5 +1,5 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2021-12-27
-# SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-01
+# SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
 #Requires -Version 5.1
@@ -27,10 +27,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2021-12-27'
-$interactive = !$batch
-
+$version = '2022-01-01'
 $warnings = [System.Collections.ArrayList]::new()
+
+function Get-ADPrivInteractive{
+	!$batch
+}
 
 function Write-Log{
 	[CmdletBinding()]
@@ -175,7 +177,7 @@ function ConvertTo-ADPrivRows{
 				Select-Object -ExpandProperty Name |
 				ForEach-Object{
 			if($dateProps.Contains($_)){
-				$out.($_ + 'Date') = if($row.$_){
+				$out.($_ + 'Date') = if($null -ne $row.$_){
 					[DateTime]::FromFileTime($row.$_)
 				}else{
 					$null
@@ -204,10 +206,10 @@ function Out-ADPrivReports{
 		$ctx,
 		[Parameter(Mandatory)]
 		[string]$name,
+		[Parameter(Mandatory)]
 		[string]$title
 	)
 	Begin{
-		Write-Log "Processing $title ($name)..."
 		$results = [System.Collections.ArrayList]::new()
 	}
 	Process{
@@ -215,13 +217,13 @@ function Out-ADPrivReports{
 	}
 	End{
 		$results = $results.ToArray()
-		$caption = "  $title ($name): "
+		$caption = "$title ($name): "
 		if($results){
 			$caption += $results.Count
 		}else{
 			$caption += 0
 		}
-		Write-Log $caption
+		Write-Log "  $caption"
 		# Reduce unnecessary memory usage in large directories with large reports.
 		if($ctx.params.passThru){
 			$ctx.reports.$name = $results
@@ -232,7 +234,7 @@ function Out-ADPrivReports{
 				$results | Export-Csv -NoTypeInformation -Path $path
 				$ctx.reportFiles += $path
 			}
-			if($interactive){
+			if(Get-ADPrivInteractive){
 				$results | Out-GridView -Title $caption
 			}
 		}elseif(!$noFiles){
@@ -243,6 +245,30 @@ function Out-ADPrivReports{
 			$ctx.reportFiles += $path
 		}
 	}
+}
+
+<#
+	.SYNOPSIS
+		Effectively wraps a report.
+		Ensures that the processing is logged at the start of the activity, as well as providing a structure for potential future hooks.
+	.NOTES
+		The Get-AD* cmdlets, in particular, completely block a subsequent pipeline from even initializing - due to it returning its results in its Begin (vs. Process) block.
+#>
+function New-ADPrivReport{
+	[CmdletBinding()]
+	param(
+		[Parameter(Mandatory)]
+		$ctx,
+		[Parameter(Mandatory)]
+		[string]$name,
+		[Parameter(Mandatory)]
+		[string]$title,
+		[Parameter(Mandatory)]
+		[scriptblock]$dataSource
+	)
+
+	Write-Log "Processing $title ($name)..."
+	& $dataSource | Out-ADPrivReports -ctx $ctx -name $name -title $title
 }
 
 <#
@@ -473,7 +499,34 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 	}
 }
 
-function Invoke-ADPrivInit(){
+function Get-ADPrivReportsFolder(){
+	if(!$reportsFolder){
+		$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
+		$reportsFolder = Join-Path $desktopPath 'AD-Reports'
+	}
+	$reportsFolder
+}
+
+function Test-ADPrivIsAdmin($user, $domain){
+	Write-Log 'Checking for execution as Domain Administrator...'
+
+	$domainAdminsSid = [System.Security.Principal.SecurityIdentifier]::new(
+		[System.Security.Principal.WellKnownSidType]::AccountDomainAdminsSid,
+		$domain.DomainSID
+	)
+
+	$windowsPrincipal = [System.Security.Principal.WindowsPrincipal]::new($user)
+	if($windowsPrincipal.IsInRole($domainAdminsSid)){
+		Write-Log "  Running as Domain Admin: $($user.Name), $domainAdminsSid"
+		$true
+	}else{
+		Write-Log ("  Current user ($($user.Name)) is not running as a Domain Administrator." +
+			'  Results may be incomplete!') -Severity WARN
+		$false
+	}
+}
+
+function Initialize-ADPrivReports(){
 	$ctx = [ordered]@{
 		params = [ordered]@{
 			version = $version
@@ -492,10 +545,7 @@ function Invoke-ADPrivInit(){
 
 	Write-Log ('Version: ' + $version)
 
-	if(!$reportsFolder){
-		$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
-		$reportsFolder = Join-Path $desktopPath 'AD-Reports'
-	}
+	$reportsFolder = Get-ADPrivReportsFolder
 	$ctx.params.reportsFolder = $reportsFolder
 	Write-Log ('$reportsFolder: {0}' -f $reportsFolder)
 	if(!$noFiles){
@@ -524,20 +574,8 @@ function Invoke-ADPrivInit(){
 			(Get-Date -Date $now -Format 'yyyy-MM-dd'))
 	Write-Log ('$filePattern: {0}' -f $filePattern)
 
-	Write-Log 'Checking for execution as Domain Administrator...'
-
-	$domainAdminsSid = [System.Security.Principal.SecurityIdentifier]::new(
-		[System.Security.Principal.WellKnownSidType]::AccountDomainAdminsSid,
-		$domain.DomainSID
-	)
 	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-	$windowsPrincipal = [System.Security.Principal.WindowsPrincipal]::new($currentUser)
-	if($windowsPrincipal.IsInRole($domainAdminsSid)){
-		Write-Log "  Running as Domain Admin: $($currentUser.Name), $domainAdminsSid"
-	}else{
-		Write-Log ("Current user ($($currentUser.Name)) is not running as a Domain Administrator." +
-			'  Results may be incomplete!') -Severity WARN
-	}
+	[void](Test-ADPrivIsAdmin $currentUser $domain)
 
 	if(!$noFiles){
 		Write-Log 'Writing parameters JSON file...'
@@ -594,56 +632,58 @@ function Invoke-ADPrivGroups($ctx){
 		}
 	}
 
-	$groupsIn.GetEnumerator() | ForEach-Object{
-		$groupName = $_.Name
-		$expectedGroup = $_.Value
+	New-ADPrivReport -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members' -dataSource {
+		$groupsIn.GetEnumerator() | ForEach-Object{
+			$groupName = $_.Name
+			$expectedGroup = $_.Value
 
-		Write-Log "  - Processing group: $($groupName)..."
+			Write-Log "  - Processing group: $($groupName)..."
 
-		$group = Get-ADPrivGroup $groupName
-		$group
-		if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
-			Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
-					"  Also attempting as $($expectedGroup)..."
-				) -Severity WARN
-			$group = Get-ADPrivGroup $expectedGroup
+			$group = Get-ADPrivGroup $groupName
 			$group
-		}
-	} | ForEach-Object{
-		$group = $_
-		[void]$groups.Add($group)
-
-		Get-ADGroupMemberSafe -identity $group -ctx $ctx | ForEach-Object{
-			$gm = $_
-			$x = [ordered]@{
-				GroupSid = $group.objectSid
-				GroupName = $group.Name
+			if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
+				Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
+						"  Also attempting as $($expectedGroup)..."
+					) -Severity WARN
+				$group = Get-ADPrivGroup $expectedGroup
+				$group
 			}
+		} | ForEach-Object{
+			$group = $_
+			[void]$groups.Add($group)
 
-			$gm.entry `
-					| Get-Member -MemberType Properties `
-					| Select-Object -ExpandProperty Name `
-					| ForEach-Object{
-				$x.$_ = $gm.entry.$_
+			Get-ADGroupMemberSafe -identity $group -ctx $ctx | ForEach-Object{
+				$gm = $_
+				$x = [ordered]@{
+					GroupSid = $group.objectSid
+					GroupName = $group.Name
+				}
+
+				$gm.entry `
+						| Get-Member -MemberType Properties `
+						| Select-Object -ExpandProperty Name `
+						| ForEach-Object{
+					$x.$_ = $gm.entry.$_
+				}
+				$x.MemberEntry = $gm.entry
+				$x.MemberPathArray = $gm.path
+				$x.MemberPath = $gm.path -join '; '
+				$x.MemberDepth = $gm.path.Count
+
+				[PSCustomObject]$x
 			}
-			$x.MemberEntry = $gm.entry
-			$x.MemberPathArray = $gm.path
-			$x.MemberPath = $gm.path -join '; '
-			$x.MemberDepth = $gm.path.Count
-
-			[PSCustomObject]$x
-		}
-	} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth')) `
-		| Out-ADPrivReports -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members'
+		} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth'))
+	}
 
 	$ctx.adPrivGroupsObjCache = $null
 
-	$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut `
-		| Out-ADPrivReports -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups'
+	New-ADPrivReport -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups' -dataSource {
+		$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut
+	}
 }
 
 function Invoke-ADPrivReports(){
-	$ctx = Invoke-ADPrivInit
+	$ctx = Initialize-ADPrivReports
 
 	# Filters support only "simple variable references", no expressions unless shortcutted here.
 	# - https://stackoverflow.com/a/44184818/751158
@@ -658,79 +698,85 @@ function Invoke-ADPrivReports(){
 
 	# Users that haven't logged-in within # days...
 
-	Get-ADUser `
-			-Filter {
-				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
-			} `
-			-Properties $ctx.adProps.userIn `
-		| Sort-Object -Property 'lastLogonTimestamp' `
-		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
-		| Out-ADPrivReports -ctx $ctx -name 'staleUsers' -title 'Stale Users'
+	New-ADPrivReport -ctx $ctx -name 'staleUsers' -title 'Stale Users' -dataSource {
+		Get-ADUser `
+				-Filter {
+					Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
+				} `
+				-Properties $ctx.adProps.userIn `
+			| Sort-Object -Property 'lastLogonTimestamp' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
+	}
 
 	# Users with passwords older than # days...
 
-	Get-ADUser `
-			-Filter {
-				Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
-			} `
-			-Properties $ctx.adProps.userIn `
-		| Sort-Object -Property 'PasswordLastSet' `
-		| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
-		| Out-ADPrivReports -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords'
+	New-ADPrivReport -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords' -dataSource {
+		Get-ADUser `
+				-Filter {
+					Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
+				} `
+				-Properties $ctx.adProps.userIn `
+			| Sort-Object -Property 'PasswordLastSet' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
+	}
 
 	# Users with PasswordNotRequired set...
 
-	Get-ADUser `
-		-Filter {
-			PasswordNotRequired -eq $true
-		} `
-		-Properties $ctx.adProps.userIn `
-	| Sort-Object -Property 'UserPrincipalName' `
-	| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
-	| Out-ADPrivReports -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required'
+	New-ADPrivReport -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required' -dataSource {
+		Get-ADUser `
+				-Filter {
+					PasswordNotRequired -eq $true
+				} `
+				-Properties $ctx.adProps.userIn `
+			| Sort-Object -Property 'UserPrincipalName' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
+	}
 
 	# Users with SIDHistory...
 
-	Get-ADUser `
-		-Filter {
-			SIDHistory -like '*'
-		} `
-		-Properties $ctx.adProps.userIn `
-	| Sort-Object -Property 'UserPrincipalName' `
-	| ConvertTo-ADPrivRows -property $ctx.adProps.userOut `
-	| Out-ADPrivReports -ctx $ctx -name 'sidHistory' -title 'SID History'
+	New-ADPrivReport -ctx $ctx -name 'sidHistory' -title 'SID History' -dataSource {
+		Get-ADUser `
+				-Filter {
+					SIDHistory -like '*'
+				} `
+				-Properties $ctx.adProps.userIn `
+			| Sort-Object -Property 'UserPrincipalName' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
+	}
 
 	# Computers that haven't logged-in within # days...
 
-	Get-ADComputer `
-			-Filter {
-				Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
-			} `
-			-Properties $ctx.adProps.compIn `
-		| Sort-Object -Property 'lastLogonTimestamp' `
-		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
-		| Out-ADPrivReports -ctx $ctx -name 'staleComps' -title 'Stale Computers'
+	New-ADPrivReport -ctx $ctx -name 'staleComps' -title 'Stale Computers' -dataSource {
+		Get-ADComputer `
+				-Filter {
+					Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
+				} `
+				-Properties $ctx.adProps.compIn `
+			| Sort-Object -Property 'lastLogonTimestamp' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
+	}
 
 	# Computers with unsupported operating systems...
 
-	Get-ADComputer `
-			-Filter {
-				Enabled -eq $true -and (OperatingSystem -like 'Windows*')
-			} `
-			-Properties $ctx.adProps.compIn `
-		| ForEach-Object {
-			$osVer = $_.OperatingSystemVersion -split ' '
-			$osVer1 = [decimal]$osVer[0]
-			if($_.OperatingSystem.StartsWith('Windows Server')){
-				if($osVer1 -lt 6.2){
+	New-ADPrivReport -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems' -dataSource {
+		Get-ADComputer `
+				-Filter {
+					Enabled -eq $true -and (OperatingSystem -like 'Windows*')
+				} `
+				-Properties $ctx.adProps.compIn `
+			| ForEach-Object {
+				$osVer = $_.OperatingSystemVersion -split ' '
+				$osVer1 = [decimal]$osVer[0]
+				if($_.OperatingSystem.StartsWith('Windows Server')){
+					if($osVer1 -lt 6.2){
+						$_
+					}
+				}elseif($osVer1 -lt 6.3){
 					$_
 				}
-			}elseif($osVer1 -lt 6.3){
-				$_
-			}
-		} | Sort-Object -Property 'OperatingSystemVersion' `
-		| ConvertTo-ADPrivRows -property $ctx.adProps.compOut `
-		| Out-ADPrivReports -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems'
+			} | Sort-Object -Property 'OperatingSystemVersion' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
+	}
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
@@ -744,16 +790,18 @@ function Invoke-ADPrivReports(){
 					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
 
-		Invoke-LAPSReport {
-					Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
-				} `
-			| Where-Object {
+		New-ADPrivReport -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.' -dataSource {
+			Invoke-LAPSReport {
+				Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
+			} | Where-Object {
 				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
-			} | Out-ADPrivReports -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.'
-		Invoke-LAPSReport {
-					Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
-				} `
-			| Out-ADPrivReports -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.'
+			}
+		}
+		New-ADPrivReport -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.' -dataSource {
+			Invoke-LAPSReport {
+				Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
+			}
+		}
 
 		@(Get-ADComputer -Filter {
 			Enabled -eq $true
@@ -773,9 +821,10 @@ function Invoke-ADPrivReports(){
 
 	# Warnings
 
-	$warnings `
-		| ConvertTo-ADPrivRows `
-		| Out-ADPrivReports -ctx $ctx -name 'warnings' -title 'Warnings'
+	New-ADPrivReport -ctx $ctx -name 'warnings' -title 'Warnings' -dataSource {
+		$warnings `
+			| ConvertTo-ADPrivRows
+	}
 
 	if(!($noFiles -or $noZip)){
 		Write-Log 'Creating compressed archive...'
@@ -793,7 +842,7 @@ function Invoke-ADPrivMain(){
 			Import-Module ActiveDirectory
 			Invoke-ADPrivReports
 			Write-Log 'Done!'
-			if($interactive){
+			if(Get-ADPrivInteractive){
 				Pause
 			}
 		}else{
@@ -802,7 +851,7 @@ function Invoke-ADPrivMain(){
 		}
 	}catch{
 		Write-Log 'Error:', $_ -Severity ERROR
-		if($interactive){
+		if(Get-ADPrivInteractive){
 			$_ | Format-List -Force
 			Pause
 		}else{

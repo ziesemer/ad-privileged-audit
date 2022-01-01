@@ -1,5 +1,5 @@
 ﻿# Mark A. Ziesemer, www.ziesemer.com
-# SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
+# SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 
 #Requires -Version 5.1
 #Requires -Modules @{ModuleName='Pester'; ModuleVersion='5.3.1'}
@@ -30,6 +30,13 @@ Describe 'AD-Privileged-Audit' {
 		function Set-StrictMode(){}
 
 		. $PSScriptRoot\..\AD-Privileged-Audit.ps1
+
+		function Get-ADDomain{
+			@{
+				DNSRoot = 'test.example.com'
+				DomainSID = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890')
+			}
+		}
 	}
 
 	BeforeEach {
@@ -37,8 +44,117 @@ Describe 'AD-Privileged-Audit' {
 		Microsoft.PowerShell.Core\Set-StrictMode -Version Latest
 	}
 
-	It 'Initialize-ADPrivObjectCache' {
-		$ctx = @{}
-		Initialize-ADPrivObjectCache $ctx
+	It 'Get-ADPrivReportsFolder' {
+		Get-ADPrivReportsFolder | Should -BeOfType [string]
 	}
+
+	It 'Get-ADPrivInteractive' {
+		Get-ADPrivInteractive | Should -Be $true
+	}
+
+	It 'Test-ADPrivIsAdmin' {
+		Mock Write-Log -Verifiable -ParameterFilter {$Severity -eq 'WARN'}
+		Test-ADPrivIsAdmin ([System.Security.Principal.WindowsIdentity]::GetCurrent()) (Get-ADDomain)
+		Should -InvokeVerifiable
+	}
+
+	Context 'With-Mock'{
+		BeforeAll {
+			function Get-ADPrivInteractive{
+				$false
+			}
+
+			function Get-ADPrivReportsFolder{
+				Join-Path '.Tests' 'AD-Reports'
+			}
+
+			function Test-ADPrivIsAdmin{
+				$true
+			}
+		}
+
+		It 'Initialize-ADPrivObjectCache' {
+			$ctx = @{}
+			Initialize-ADPrivObjectCache $ctx
+		}
+
+		It 'Initialize-ADPrivReports' {
+			Mock Test-ADPrivIsAdmin {$true} -Verifiable
+			$ctx = Initialize-ADPrivReports
+			$ctx | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]
+			Should -InvokeVerifiable
+		}
+
+		It 'New-ADPrivReport-Empty' {
+			$ctx = Initialize-ADPrivReports
+			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {}
+		}
+
+		It 'New-ADPrivReport-Sample' {
+			$ctx = Initialize-ADPrivReports
+			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {1}
+		}
+
+		It 'New-ADPrivReport-NonInteractive' {
+			$ctx = Initialize-ADPrivReports
+			Mock Out-GridView {}
+			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {1}
+			Should -CommandName Out-GridView -Times 0
+		}
+
+		It 'New-ADPrivReport-Interactive' {
+			$ctx = Initialize-ADPrivReports
+			Mock Get-ADPrivInteractive {$true}
+			Mock Out-GridView {}
+			New-ADPrivReport -ctx $ctx -name 'sampleName' -title 'Sample Title' -dataSource {'A1'}
+			Should -CommandName Out-GridView -Times 1
+			Should -CommandName Out-GridView -Times 1 -ParameterFilter {$title -eq 'Sample Title (sampleName): 1'}
+		}
+
+		It 'Out-ADPrivReports-NoPassThru' {
+			$ctx = Initialize-ADPrivReports
+			'A1' | Out-ADPrivReports -ctx $ctx -name 'sampleName' -title 'Sample Title'
+			$ctx.reports.Count | Should -Be 0
+		}
+
+		It 'Out-ADPrivReports-PassThru' {
+			$ctx = Initialize-ADPrivReports
+			$ctx.params.passThru = $true
+			'A1' | Out-ADPrivReports -ctx $ctx -name 'sampleName' -title 'Sample Title'
+			$ctx.reports.Count | Should -Be 1
+			$ctx.reports['sampleName'][0] | Should -Be 'A1'
+		}
+
+		It 'ConvertTo-ADPrivRows' {
+			$result = 'A' | ConvertTo-ADPrivRows
+			$result[0].'Row#' | Should -Be 1
+		}
+
+		It 'ConvertTo-ADPrivRows-Props' {
+			$result = 'A' | ConvertTo-ADPrivRows -property 'B', 'C'
+			($result[0].PSObject.Properties | Select-Object -First 1).Name | Should -Be 'Row#'
+			$result[0].'Row#' | Should -Be 1
+		}
+
+		It 'ConvertTo-ADPrivRows-dateProps' {
+			$result = [PSCustomObject]@{'lastLogonTimestamp'=0} | ConvertTo-ADPrivRows
+			$names = $result[0].PSObject.Properties.Name
+			$names[1] | Should -Be 'lastLogonTimestampDate'
+			$names[2] | Should -Be 'lastLogonTimestamp'
+			$result[0].'lastLogonTimestamp' | Should -Be 0
+			$result[0].'lastLogonTimestampDate' | Should -Be ([DateTime]::FromFileTime(0))
+		}
+
+		It 'ConvertTo-ADPrivRows-dateProps-null' {
+			$result = [PSCustomObject]@{'lastLogonTimestamp'=$null} | ConvertTo-ADPrivRows
+			$result[0].'lastLogonTimestamp' | Should -Be $null
+			$result[0].'lastLogonTimestampDate' | Should -Be $null
+		}
+
+		It 'ConvertTo-ADPrivRows-ConsistencyGuid' {
+			$result = [PSCustomObject]@{'mS-DS-ConsistencyGuid'=[byte]1,2,3} | ConvertTo-ADPrivRows
+			$result[0].'mS-DS-ConsistencyGuid' | Should -Be 'AQID'
+		}
+	}
+
 }

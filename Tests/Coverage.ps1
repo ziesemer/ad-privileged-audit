@@ -1,5 +1,5 @@
 # Mark A. Ziesemer, www.ziesemer.com
-# SPDX-FileCopyrightText: Copyright © 2020-2021, Mark A. Ziesemer
+# SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 
 # At least as of 2021-12-04, this tends to hang Visual Studio Code if run normally from within VSC.
 # This seems to be due to VSC attaching a debugger and then struggling to track breakpoints used by Pester, with no option that I can find at present to disable.
@@ -16,5 +16,6 @@ $ErrorActionPreference = 'Stop'
 $Configuration = [PesterConfiguration]::Default
 $Configuration.CodeCoverage.Enabled = $true
 $Configuration.CodeCoverage.OutputFormat = 'CoverageGutters'
+$Configuration.CodeCoverage.Path = @('AD-Privileged-Audit.ps1')
 
 Invoke-Pester -Configuration $Configuration
