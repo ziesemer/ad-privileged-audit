@@ -94,79 +94,85 @@ Describe 'AD-Privileged-Audit' {
 			Should -InvokeVerifiable
 		}
 
-		It 'New-ADPrivReport-Empty' {
-			$ctx = Initialize-ADPrivReports
-			$oldCount = $ctx.reportFiles.Count
-			New-ADPrivReport -ctx $ctx -name 'sampleNameA' -title 'Sample Title' -dataSource {}
-			$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
+		Context 'New-ADPrivReport' {
+			It 'New-ADPrivReport-Empty' {
+				$ctx = Initialize-ADPrivReports
+				$oldCount = $ctx.reportFiles.Count
+				New-ADPrivReport -ctx $ctx -name 'sampleNameA' -title 'Sample Title' -dataSource {}
+				$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
+			}
+
+			It 'New-ADPrivReport-Sample' {
+				$ctx = Initialize-ADPrivReports
+				$oldCount = $ctx.reportFiles.Count
+				New-ADPrivReport -ctx $ctx -name 'sampleNameB' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
+				$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
+			}
+
+			It 'New-ADPrivReport-NonInteractive' {
+				$ctx = Initialize-ADPrivReports
+				Mock Out-GridView {}
+				New-ADPrivReport -ctx $ctx -name 'sampleNameC' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
+				Should -CommandName Out-GridView -Times 0
+			}
+
+			It 'New-ADPrivReport-Interactive' {
+				$ctx = Initialize-ADPrivReports
+				Mock Get-ADPrivInteractive {$true}
+				Mock Out-GridView {}
+				New-ADPrivReport -ctx $ctx -name 'sampleNameD' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
+				Should -CommandName Out-GridView -Times 1
+				Should -CommandName Out-GridView -Times 1 -ParameterFilter {$title -eq 'Sample Title (sampleNameD): 1'}
+			}
 		}
 
-		It 'New-ADPrivReport-Sample' {
-			$ctx = Initialize-ADPrivReports
-			$oldCount = $ctx.reportFiles.Count
-			New-ADPrivReport -ctx $ctx -name 'sampleNameB' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
-			$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
+		Context 'Out-ADPrivReports' {
+			It 'Out-ADPrivReports-NoPassThru' {
+				$ctx = Initialize-ADPrivReports
+				[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameE' -title 'Sample Title'
+				$ctx.reports.Count | Should -Be 0
+			}
+
+			It 'Out-ADPrivReports-PassThru' {
+				$ctx = Initialize-ADPrivReports
+				$ctx.params.passThru = $true
+				[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameF' -title 'Sample Title'
+				$ctx.reports.Count | Should -Be 1
+				$ctx.reports['sampleNameF'][0].Name | Should -Be 'A1'
+			}
 		}
 
-		It 'New-ADPrivReport-NonInteractive' {
-			$ctx = Initialize-ADPrivReports
-			Mock Out-GridView {}
-			New-ADPrivReport -ctx $ctx -name 'sampleNameC' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
-			Should -CommandName Out-GridView -Times 0
-		}
+		Context 'ConvertTo-ADPrivRows' {
+			It 'ConvertTo-ADPrivRows' {
+				$result = 'A' | ConvertTo-ADPrivRows
+				$result[0].'Row#' | Should -Be 1
+			}
 
-		It 'New-ADPrivReport-Interactive' {
-			$ctx = Initialize-ADPrivReports
-			Mock Get-ADPrivInteractive {$true}
-			Mock Out-GridView {}
-			New-ADPrivReport -ctx $ctx -name 'sampleNameD' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
-			Should -CommandName Out-GridView -Times 1
-			Should -CommandName Out-GridView -Times 1 -ParameterFilter {$title -eq 'Sample Title (sampleNameD): 1'}
-		}
+			It 'ConvertTo-ADPrivRows-Props' {
+				$result = 'A' | ConvertTo-ADPrivRows -property 'B', 'C'
+				($result[0].PSObject.Properties | Select-Object -First 1).Name | Should -Be 'Row#'
+				$result[0].'Row#' | Should -Be 1
+			}
 
-		It 'Out-ADPrivReports-NoPassThru' {
-			$ctx = Initialize-ADPrivReports
-			[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameE' -title 'Sample Title'
-			$ctx.reports.Count | Should -Be 0
-		}
+			It 'ConvertTo-ADPrivRows-dateProps' {
+				$result = [PSCustomObject]@{'lastLogonTimestamp'=0} | ConvertTo-ADPrivRows
+				$names = $result[0].PSObject.Properties.Name
+				$names[1] | Should -Be 'lastLogonTimestampDate'
+				$names[2] | Should -Be 'lastLogonTimestamp'
+				$result[0].'lastLogonTimestamp' | Should -Be 0
+				$result[0].'lastLogonTimestampDate' | Should -Be ([DateTime]::FromFileTime(0))
+			}
 
-		It 'Out-ADPrivReports-PassThru' {
-			$ctx = Initialize-ADPrivReports
-			$ctx.params.passThru = $true
-			[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameF' -title 'Sample Title'
-			$ctx.reports.Count | Should -Be 1
-			$ctx.reports['sampleNameF'][0].Name | Should -Be 'A1'
-		}
+			It 'ConvertTo-ADPrivRows-dateProps-null' {
+				$result = [PSCustomObject]@{'lastLogonTimestamp'=$null} | ConvertTo-ADPrivRows
+				$result[0].'lastLogonTimestamp' | Should -Be $null
+				$result[0].'lastLogonTimestampDate' | Should -Be $null
+			}
 
-		It 'ConvertTo-ADPrivRows' {
-			$result = 'A' | ConvertTo-ADPrivRows
-			$result[0].'Row#' | Should -Be 1
-		}
-
-		It 'ConvertTo-ADPrivRows-Props' {
-			$result = 'A' | ConvertTo-ADPrivRows -property 'B', 'C'
-			($result[0].PSObject.Properties | Select-Object -First 1).Name | Should -Be 'Row#'
-			$result[0].'Row#' | Should -Be 1
-		}
-
-		It 'ConvertTo-ADPrivRows-dateProps' {
-			$result = [PSCustomObject]@{'lastLogonTimestamp'=0} | ConvertTo-ADPrivRows
-			$names = $result[0].PSObject.Properties.Name
-			$names[1] | Should -Be 'lastLogonTimestampDate'
-			$names[2] | Should -Be 'lastLogonTimestamp'
-			$result[0].'lastLogonTimestamp' | Should -Be 0
-			$result[0].'lastLogonTimestampDate' | Should -Be ([DateTime]::FromFileTime(0))
-		}
-
-		It 'ConvertTo-ADPrivRows-dateProps-null' {
-			$result = [PSCustomObject]@{'lastLogonTimestamp'=$null} | ConvertTo-ADPrivRows
-			$result[0].'lastLogonTimestamp' | Should -Be $null
-			$result[0].'lastLogonTimestampDate' | Should -Be $null
-		}
-
-		It 'ConvertTo-ADPrivRows-ConsistencyGuid' {
-			$result = [PSCustomObject]@{'mS-DS-ConsistencyGuid'=[byte]1,2,3} | ConvertTo-ADPrivRows
-			$result[0].'mS-DS-ConsistencyGuid' | Should -Be 'AQID'
+			It 'ConvertTo-ADPrivRows-ConsistencyGuid' {
+				$result = [PSCustomObject]@{'mS-DS-ConsistencyGuid'=[byte]1,2,3} | ConvertTo-ADPrivRows
+				$result[0].'mS-DS-ConsistencyGuid' | Should -Be 'AQID'
+			}
 		}
 
 		Context 'Get-ADPrivObjectCache' {
