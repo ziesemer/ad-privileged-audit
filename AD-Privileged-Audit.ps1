@@ -384,6 +384,9 @@ function Get-ADPrivObjectCache($identity, $class, $ctx){
 	# However, loading as a generic "object" is sometimes first required to determine the object's class
 	# - which is then missing the object-class's specific attributes, without incurring a sometimes-unnecessary eager lookup.
 	$classCache = $cache[$class]
+	if(!$classCache){
+		throw "Unhandled cache type: $class"
+	}
 
 	if($identity -is [string]){
 		$id = $identity
@@ -413,8 +416,8 @@ function Get-ADPrivObjectCache($identity, $class, $ctx){
 			$result = $identity | Get-ADObject @adParams -Properties $ctx.adProps.objectIn
 		}elseif($class -ceq '@PrimaryGroupMembers'){
 			# Simply otherwise calling Get-ADObject here fails to return the computer objects.
-			$result = @(Get-ADUser @adParams -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.userIn) `
-				+ @(Get-ADComputer @adParams -Filter {PrimaryGroup -eq $group.DistinguishedName} -Properties $ctx.adProps.compIn)
+			$result = @(Get-ADUser @adParams -Filter {PrimaryGroup -eq $identity.DistinguishedName} -Properties $ctx.adProps.userIn) `
+				+ @(Get-ADComputer @adParams -Filter {PrimaryGroup -eq $identity.DistinguishedName} -Properties $ctx.adProps.compIn)
 		}else{
 			throw "Unhandled cache type: $class"
 		}

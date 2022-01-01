@@ -168,6 +168,112 @@ Describe 'AD-Privileged-Audit' {
 			$result = [PSCustomObject]@{'mS-DS-ConsistencyGuid'=[byte]1,2,3} | ConvertTo-ADPrivRows
 			$result[0].'mS-DS-ConsistencyGuid' | Should -Be 'AQID'
 		}
-	}
 
+		Context 'Get-ADPrivObjectCache' {
+			BeforeAll {
+				$ctx = Initialize-ADPrivReports
+				# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
+				$ctx | Should -Not -BeNullOrEmpty
+
+				$mockGetAdFunc = {
+					[CmdletBinding()]
+					param(
+						[Parameter(ValueFromPipeline)]
+						$InputObject,
+						$Filter,
+						$Server,
+						$Properties
+					)
+					[void]$adResults.Add(@{
+						'Command' = '$commandName'
+						'InputObject' = $InputObject
+						'Filter' = $Filter
+						'Server' = $Server
+						'Properties' = $Properties
+					})
+					"sampleData-$InputObject"
+				}
+				foreach($t in 'User', 'Computer', 'Group', 'Object'){
+					$d = $mockGetAdFunc -replace '$commandName', "Get-AD$($t)"
+					Invoke-Expression "function Get-AD$($t) {$d}"
+				}
+			}
+
+			BeforeEach {
+				Initialize-ADPrivObjectCache $ctx
+
+				$adResults = [System.Collections.ArrayList]::new()
+				# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
+				$adResults.Count | Should -Be 0
+			}
+
+			It 'Get-ADPrivObjectCache-InvalidClass' {
+				{Get-ADPrivObjectCache 'testUser' 'invalidClass' $ctx} | Should -Throw 'Unhandled cache type: invalidClass'
+			}
+
+			It 'Get-ADPrivObjectCache-InvalidClass-Mismatch' {
+				$ctx.adPrivGroupsObjCache['invalidClassMismatch'] = @{}
+				{Get-ADPrivObjectCache 'testUser' 'invalidClassMismatch' $ctx} | Should -Throw 'Unhandled cache type: invalidClassMismatch'
+			}
+
+			It 'Get-ADPrivObjectCache-User-DN' {
+				Get-ADPrivObjectCache @{DistinguishedName='testUser1Dn'} 'user' $ctx | Should -Match 'sampleData.*'
+			}
+
+			It 'Get-ADPrivObjectCache-User' {
+				Get-ADPrivObjectCache 'testUser1' 'user' $ctx | Should -Be 'sampleData-testUser1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testUser1' 'user' $ctx | Should -Be 'sampleData-testUser1'
+				Get-ADPrivObjectCache 'testUser1' 'object' $ctx | Should -Be 'sampleData-testUser1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testUser2' 'user' $ctx | Should -Be 'sampleData-testUser2'
+				Get-ADPrivObjectCache 'testUser2' 'object' $ctx | Should -Be 'sampleData-testUser2'
+				$adResults.Count | Should -Be 2
+			}
+
+			It 'Get-ADPrivObjectCache-Computer' {
+				Get-ADPrivObjectCache 'testComputer1' 'computer' $ctx | Should -Be 'sampleData-testComputer1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testComputer1' 'computer' $ctx | Should -Be 'sampleData-testComputer1'
+				Get-ADPrivObjectCache 'testComputer1' 'object' $ctx | Should -Be 'sampleData-testComputer1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testComputer2' 'computer' $ctx | Should -Be 'sampleData-testComputer2'
+				Get-ADPrivObjectCache 'testComputer2' 'object' $ctx | Should -Be 'sampleData-testComputer2'
+				$adResults.Count | Should -Be 2
+			}
+
+			It 'Get-ADPrivObjectCache-Group' {
+				$ctx.adProps.groupIn = Resolve-ADPrivProps 'group'
+
+				Get-ADPrivObjectCache 'testGroup1' 'group' $ctx | Should -Be 'sampleData-testGroup1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testGroup1' 'group' $ctx | Should -Be 'sampleData-testGroup1'
+				Get-ADPrivObjectCache 'testGroup1' 'object' $ctx | Should -Be 'sampleData-testGroup1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testGroup2' 'group' $ctx | Should -Be 'sampleData-testGroup2'
+				Get-ADPrivObjectCache 'testGroup2' 'object' $ctx | Should -Be 'sampleData-testGroup2'
+				$adResults.Count | Should -Be 2
+			}
+
+			It 'Get-ADPrivObjectCache-Object' {
+				$ctx.adProps.objectIn = Resolve-ADPrivProps 'object'
+
+				Get-ADPrivObjectCache 'testObject1' 'object' $ctx | Should -Be 'sampleData-testObject1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testObject1' 'object' $ctx | Should -Be 'sampleData-testObject1'
+				$adResults.Count | Should -Be 1
+				Get-ADPrivObjectCache 'testObject2' 'object' $ctx | Should -Be 'sampleData-testObject2'
+				$adResults.Count | Should -Be 2
+			}
+
+			It 'Get-ADPrivObjectCache-PrimaryGroupMembers' {
+				Get-ADPrivObjectCache 'testPrimaryGroupMembers1' '@PrimaryGroupMembers' $ctx | Should -Be @('sampleData-', 'sampleData-')
+				$adResults.Count | Should -Be 2
+				Get-ADPrivObjectCache 'testPrimaryGroupMembers1' '@PrimaryGroupMembers' $ctx | Should -Be @('sampleData-', 'sampleData-')
+				$adResults.Count | Should -Be 2
+				Get-ADPrivObjectCache 'testPrimaryGroupMembers2' '@PrimaryGroupMembers' $ctx
+				$adResults.Count | Should -Be 4
+			}
+		}
+	}
 }
