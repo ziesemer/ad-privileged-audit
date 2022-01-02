@@ -779,7 +779,7 @@ function Invoke-ADPrivReports($ctx){
 				}elseif($osVer1 -lt 6.3){
 					$_
 				}
-			} | Sort-Object -Property 'OperatingSystemVersion' `
+			} | Sort-Object -Property 'OperatingSystemVersion', 'OperatingSystem', 'lastLogonTimestamp' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
 	}
 
