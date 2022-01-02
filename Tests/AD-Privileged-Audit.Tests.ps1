@@ -44,6 +44,8 @@ Describe 'AD-Privileged-Audit' {
 	BeforeEach {
 		# Continued work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
 		Microsoft.PowerShell.Core\Set-StrictMode -Version Latest
+
+		$warnings.Clear()
 	}
 
 	It 'Get-ADPrivReportsFolder' {
@@ -290,6 +292,28 @@ Describe 'AD-Privileged-Audit' {
 			}
 		}
 
+		Context 'Test-ADPrivRecycleBin' {
+			It 'Test-ADPrivRecycleBin-Disabled' {
+				function Get-ADOptionalFeature{
+					@{EnabledScopes=@()}
+				}
+				Test-ADPrivRecycleBin
+				$warnings.Count | Should -Be 1
+				$warnings.Text | Should -Be 'AD Recycle Bin is not enabled!'
+			}
+
+			It 'Test-ADPrivRecycleBin-Enabled' {
+				function Get-ADOptionalFeature{
+					@{EnabledScopes=@(
+						'CN=Partitions,CN=Configuration,DC=example,DC=com',
+						'CN=NTDS Settings,CN=test-dc,CN=Servers,CN=Default-First-Site-Name,CN=Sites,CN=Configuration,DC=example,DC=com'
+					)}
+				}
+				Test-ADPrivRecycleBin
+				$warnings.Count | Should -Be 0
+			}
+		}
+
 		Context 'Invoke-ADPrivReports' {
 			# Warning: The following code serves some needed purposes for unit testing, but should NOT be referenced for production code usages!
 			BeforeAll{
@@ -459,6 +483,8 @@ Describe 'AD-Privileged-Audit' {
 						'SchemaNamingContext' = 'CN=Schema,CN=Configuration,DC=example,DC=com'
 					}
 				}
+
+				function Test-ADPrivRecycleBin{}
 			}
 
 			BeforeEach{

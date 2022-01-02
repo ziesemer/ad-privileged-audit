@@ -689,6 +689,15 @@ function Invoke-ADPrivGroups($ctx){
 	}
 }
 
+function Test-ADPrivRecycleBin($ctx){
+	$recycleBinEnabledScopes = (Get-ADOptionalFeature -Filter {Name -eq 'Recycle Bin Feature'}).EnabledScopes
+	if($recycleBinEnabledScopes){
+		Write-Log 'AD Recycle Bin is enabled.'
+	}else{
+		Write-Log 'AD Recycle Bin is not enabled!' -Severity WARN
+	}
+}
+
 function Invoke-ADPrivReports($ctx){
 	# Filters support only "simple variable references", no expressions unless shortcutted here.
 	# - https://stackoverflow.com/a/44184818/751158
@@ -823,6 +832,10 @@ function Invoke-ADPrivReports($ctx){
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
+
+	# Recycle Bin
+
+	Test-ADPrivRecycleBin -ctx $ctx
 
 	# Warnings
 
