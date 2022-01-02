@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-01
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-02
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-01-01'
+$version = '2022-01-02'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Get-ADPrivInteractive{
@@ -679,7 +679,7 @@ function Invoke-ADPrivGroups($ctx){
 
 				[PSCustomObject]$x
 			}
-		} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName') + $ctx.adProps.allOut + @('MemberPath', 'MemberDepth'))
+		} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName', 'MemberDepth') + $ctx.adProps.allOut + @('MemberPath'))
 	}
 
 	$ctx.adPrivGroupsObjCache = $null
