@@ -593,7 +593,7 @@ function Initialize-ADPrivReports(){
 	return $ctx
 }
 
-function Invoke-ADPrivGroups($ctx){
+function New-ADPrivGroups($ctx){
 	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
 	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
 	# - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
@@ -618,7 +618,19 @@ function Invoke-ADPrivGroups($ctx){
 		'Enterprise Read-Only Domain Controllers' = $dsid + '498'
 		'Read-Only Domain Controllers' = $dsid + '521'
 	}
+	return $groupsIn
+}
 
+function Get-ADPrivGroup($identity){
+	try{
+		return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
+	}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
+		Write-Log $_ -Severity WARN
+	}
+}
+
+function Invoke-ADPrivGroups($ctx){
+	$groupsIn = New-ADPrivGroups -ctx $ctx
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
 	$ctx.adProps.allOut = Resolve-ADPrivProps -generated
 	$ctx.adProps.objectIn = Resolve-ADPrivProps 'object'
@@ -626,14 +638,6 @@ function Invoke-ADPrivGroups($ctx){
 	$ctx.adProps.groupOut = Resolve-ADPrivProps 'group' -generated
 
 	Initialize-ADPrivObjectCache $ctx
-
-	function Get-ADPrivGroup($identity){
-		try{
-			return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
-		}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
-			Write-Log $_ -Severity WARN
-		}
-	}
 
 	New-ADPrivReport -ctx $ctx -name 'privGroupMembers' -title 'Privileged AD Group Members' -dataSource {
 		$groupsIn.GetEnumerator() | ForEach-Object{
@@ -644,7 +648,7 @@ function Invoke-ADPrivGroups($ctx){
 
 			$group = Get-ADPrivGroup $groupName
 			$group
-			if((!$group -or $group.SID.Value -ne $expectedGroup) -and $expectedGroup){
+			if((!$group -or $group.objectSid.Value -ne $expectedGroup) -and $expectedGroup){
 				Write-Log ("Group `"$($groupName)`" not found, or with unexpected SID." +
 						"  Also attempting as $($expectedGroup)..."
 					) -Severity WARN
@@ -685,9 +689,7 @@ function Invoke-ADPrivGroups($ctx){
 	}
 }
 
-function Invoke-ADPrivReports(){
-	$ctx = Initialize-ADPrivReports
-
+function Invoke-ADPrivReports($ctx){
 	# Filters support only "simple variable references", no expressions unless shortcutted here.
 	# - https://stackoverflow.com/a/44184818/751158
 
@@ -834,7 +836,7 @@ function Invoke-ADPrivReports(){
 		Compress-Archive -Path $ctx.reportFiles -DestinationPath ($ctx.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
-	if($PassThru){
+	if($ctx.params.passThru){
 		return [PSCustomObject]$ctx
 	}
 }
@@ -843,7 +845,8 @@ function Invoke-ADPrivMain(){
 	try{
 		if($elevated){
 			Import-Module ActiveDirectory
-			Invoke-ADPrivReports
+			$ctx = Initialize-ADPrivReports
+			Invoke-ADPrivReports -ctx $ctx
 			Write-Log 'Done!'
 			if(Get-ADPrivInteractive){
 				Pause

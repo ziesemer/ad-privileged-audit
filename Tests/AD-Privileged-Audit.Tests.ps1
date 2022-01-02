@@ -33,7 +33,9 @@ Describe 'AD-Privileged-Audit' {
 
 		function Get-ADDomain{
 			@{
+				DistinguishedName = 'DC=example,DC=com'
 				DNSRoot = 'test.example.com'
+				DomainControllersContainer = 'OU=Domain Controllers,DC=example,DC=com'
 				DomainSID = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890')
 			}
 		}
@@ -92,6 +94,12 @@ Describe 'AD-Privileged-Audit' {
 			$ctx = Initialize-ADPrivReports
 			$ctx | Should -BeOfType [System.Collections.Specialized.OrderedDictionary]
 			Should -InvokeVerifiable
+		}
+
+		It 'New-ADPrivGroups' {
+			$ctx = Initialize-ADPrivReports
+			$groupsIn = New-ADPrivGroups -ctx $ctx
+			$groupsIn | Should -Not -BeNullOrEmpty
 		}
 
 		Context 'New-ADPrivReport' {
@@ -279,6 +287,212 @@ Describe 'AD-Privileged-Audit' {
 				$adResults.Count | Should -Be 2
 				Get-ADPrivObjectCache 'testPrimaryGroupMembers2' '@PrimaryGroupMembers' $ctx
 				$adResults.Count | Should -Be 4
+			}
+		}
+
+		Context 'Invoke-ADPrivReports' {
+			# Warning: The following code serves some needed purposes for unit testing, but should NOT be referenced for production code usages!
+			BeforeAll{
+				$testGroups = @(
+					[PSCustomObject]@{
+						Name = 'Domain Admins'
+						DistinguishedName = 'CN=Domain Admins,OU=Users,DC=example,DC=com'
+						objectClass = 'group'
+						GroupScope = 'Global'
+						objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-512')
+						Members = @(
+							'CN=Administrator,OU=Users,DC=example,DC=com',
+							'CN=Administrators,CN=Builtin,DC=example,DC=com',
+							'CN=Invalid,OU=Users,DC=example,DC=com')
+					},
+					[PSCustomObject]@{
+						Name = 'Administrators'
+						DistinguishedName = 'CN=Administrators,CN=Builtin,DC=example,DC=com'
+						objectClass = 'group'
+						GroupScope = 'DomainLocal'
+						objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+						Members = @('CN=Domain Admins,OU=Users,DC=example,DC=com')
+					},
+					[PSCustomObject]@{
+						Name = 'Domain Controllers'
+						DistinguishedName = 'CN=Domain Controllers,OU=Users,DC=example,DC=com'
+						objectClass = 'group'
+						GroupScope = 'Global'
+						objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-516')
+						Members = @('CN=test-dc,OU=Domain Controllers,DC=example,DC=com')
+					}
+				)
+				$testGroupsByName = $testGroups | Group-Object -Property 'Name' -AsHashTable
+
+				$testUsers = @(
+					[PSCustomObject]@{
+						Name = 'Administrator'
+						DistinguishedName = 'CN=Administrator,OU=Users,DC=example,DC=com'
+						objectClass = 'user'
+					}
+				)
+				$testUsersByDn = $testUsers | Group-Object -Property 'DistinguishedName' -AsHashTable
+
+				$testComputers = @(
+					[PSCustomObject]@{
+						Name = 'test-dc'
+						DistinguishedName = 'CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
+						objectClass = 'computer'
+					}
+				)
+				$testComputersByDn = $testComputers | Group-Object -Property 'DistinguishedName' -AsHashTable
+
+				$testObjects = @(
+					[PSCustomObject]@{
+						DistinguishedName = 'CN=Invalid,OU=Users,DC=example,DC=com'
+						objectClass = 'Invalid'
+					}
+				)
+				$testObjectsByDn = ($testGroups + $testUsers + $testComputers + $testObjects) | Group-Object -Property 'DistinguishedName' -AsHashTable
+
+				function Get-ADPrivGroup($identity){
+					if($identity -is [PSCustomObject]){
+						return $identity
+					}
+					$g = $testGroupsByName[$identity]
+					if($g){
+						return $g
+					}
+				}
+
+				function Get-ADUser{
+					[CmdletBinding()]
+					param(
+						[Parameter(ValueFromPipeline)]
+						$InputObject,
+						$Filter,
+						$Server,
+						$Properties
+					)
+					if($InputObject){
+						if($InputObject -isnot [string]){
+							return $InputObject
+						}
+						$u = $testUsersByDn[$InputObject]
+						if($u){
+							return $u
+						}
+					}
+				}
+
+				function Get-ADComputer{
+					[CmdletBinding()]
+					param(
+						[Parameter(ValueFromPipeline)]
+						$InputObject,
+						$Filter,
+						$SearchBase,
+						$Server,
+						$Properties
+					)
+					if($InputObject){
+						if($InputObject -isnot [string]){
+							return $InputObject
+						}
+						$c = $testComputersByDn[$InputObject]
+						if($c){
+							return $c
+						}
+					}else{
+						if($SearchBase -eq $ctx.params.domain.DomainControllersContainer){
+							if($mockLapsOnDc){
+								$testComputersByDn['CN=test-dc,OU=Domain Controllers,DC=example,DC=com']
+							}
+						}else{
+							if(([string]$Filter) -notlike '*PrimaryGroupID -eq *'){
+								[PSCustomObject]@{
+									DistinguishedName = 'CN=test1,' + $ctx.params.domain.DistinguishedName
+									OperatingSystem = 'Windows Server 2008 R2 Standard'
+									OperatingSystemVersion = '6.1 (7601)'
+								}
+								[PSCustomObject]@{
+									DistinguishedName = 'CN=test2,' + $ctx.params.domain.DistinguishedName
+									OperatingSystem = 'Windows 8'
+									OperatingSystemVersion = '6.2 (0000)'
+								}
+							}
+						}
+					}
+				}
+
+				function Get-ADGroup{
+					[CmdletBinding()]
+					param(
+						[Parameter(ValueFromPipeline)]
+						$InputObject,
+						$Filter,
+						$Server,
+						$Properties
+					)
+					Get-ADPrivGroup $InputObject
+				}
+
+				function Get-ADObject{
+					[CmdletBinding()]
+					param(
+						[Parameter(ValueFromPipeline)]
+						$InputObject,
+						$Filter,
+						$SearchBase,
+						$Server,
+						$Properties
+					)
+					if($InputObject){
+						$o = $testObjectsByDn[$InputObject]
+						if($o){
+							return $o
+						}
+					}else{
+						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com' -and $mockLaps){
+							return @(,'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com')
+						}
+					}
+				}
+
+				function Get-ADRootDSE{
+					@{
+						'SchemaNamingContext' = 'CN=Schema,CN=Configuration,DC=example,DC=com'
+					}
+				}
+			}
+
+			BeforeEach{
+				$mockLaps = $true
+				$mockLaps | Should -Be $true
+				$mockLapsOnDc = $false
+				$mockLapsOnDc | Should -Be $false
+
+				$ctx = Initialize-ADPrivReports
+				$ctx | Should -Not -BeNullOrEmpty
+			}
+
+			It 'Invoke-ADPrivReports-Default' {
+				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
+				$warnings.Text | Should -Not -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
+			}
+
+			It 'Invoke-ADPrivReports-NoLaps' {
+				$mockLaps = $false
+				$mockLaps | Should -Be $false
+				Invoke-ADPrivReports -ctx $ctx
+				$warnings.Text | Should -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
+			}
+
+			It 'Invoke-ADPrivReports-LapsOnDc' {
+				$mockLapsOnDc = $true
+				$mockLapsOnDc | Should -Be $true
+				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
+				$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
+			}
+
+			It 'Invoke-ADPrivReports-PassThru' {
+				$ctx.params.passThru = $true
+				Invoke-ADPrivReports -ctx $ctx | Should -BeOfType [PSCustomObject]
 			}
 		}
 	}
