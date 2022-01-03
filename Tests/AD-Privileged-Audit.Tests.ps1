@@ -46,14 +46,14 @@ Describe 'AD-Privileged-Audit' {
 		Microsoft.PowerShell.Core\Set-StrictMode -Version Latest
 
 		$warnings.Clear()
+		$batch = $true
+		$noFiles = $true
+		$reportsFolder = "$PSScriptRoot\..\.Tests\AD-Reports"
+		$batch -and $noFiles -and $reportsFolder | Should -Be $true
 	}
 
 	It 'Get-ADPrivReportsFolder' {
 		Get-ADPrivReportsFolder | Should -BeOfType [string]
-	}
-
-	It 'Get-ADPrivInteractive' {
-		Get-ADPrivInteractive | Should -Be $true
 	}
 
 	It 'Test-ADPrivIsAdmin' {
@@ -73,16 +73,36 @@ Describe 'AD-Privileged-Audit' {
 
 	Context 'With-Mock'{
 		BeforeAll {
-			function Get-ADPrivInteractive{
-				$false
-			}
-
-			function Get-ADPrivReportsFolder{
-				Join-Path '.Tests' 'AD-Reports'
-			}
-
 			function Test-ADPrivIsAdmin{
 				$true
+			}
+
+			function Invoke-ADPrivFilter{
+				[CmdletBinding()]
+				param(
+					[Parameter(ValueFromPipeline)]
+					$InputSource,
+					[scriptblock]$Filter
+				)
+				Process{
+					if($Filter){
+						$funcs = @{}
+						foreach($f in 'Enabled', 'LastLogonTimestamp', 'PasswordLastSet', 'PasswordNotRequired', 'PrimaryGroup',
+								'OperatingSystem', 'OperatingSystemVersion', 'PrimaryGroupID', 'ms-Mcs-AdmPwd', 'Name', 'SIDHistory'){
+							$funcs[$f] = {}
+						}
+						if($Filter.InvokeWithContext($funcs, $null)){
+							return $PSItem
+						}else{
+							# This can't yet actually process the actual filter, without further work to process the PowerShell Expression Language syntax.
+							# Return all results for now...
+							return $PSItem
+						}
+						return $PSItem
+					}else{
+						return $PSItem
+					}
+				}
 			}
 		}
 
@@ -105,18 +125,31 @@ Describe 'AD-Privileged-Audit' {
 		}
 
 		Context 'New-ADPrivReport' {
-			It 'New-ADPrivReport-Empty' {
+			It 'New-ADPrivReport-<Name>' -ForEach @(
+				@{Name='Empty'; data=$false}
+				@{Name='Sample'; data=$true}
+			){
+				$noFiles = $false
+				$noFiles | Should -Be $false
+				$reportsFolder = Join-Path $reportsFolder $Name
 				$ctx = Initialize-ADPrivReports
-				$oldCount = $ctx.reportFiles.Count
-				New-ADPrivReport -ctx $ctx -name 'sampleNameA' -title 'Sample Title' -dataSource {}
-				$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
-			}
-
-			It 'New-ADPrivReport-Sample' {
-				$ctx = Initialize-ADPrivReports
-				$oldCount = $ctx.reportFiles.Count
-				New-ADPrivReport -ctx $ctx -name 'sampleNameB' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
-				$ctx.reportFiles.Count | Should -Be ($oldCount + 1)
+				if($data){
+					$dataSource = {[PSCustomObject]@{'Name'='A1'; 'Value'='A2'}}
+				}else{
+					$dataSource = {}
+				}
+				$rptName = "test$($Name)"
+				New-ADPrivReport -ctx $ctx -name $rptName -title "Sample Title $Name" -dataSource $dataSource
+				$ctx.reportFiles.Count | Should -Be 2
+				$file = $ctx.reportFiles[$rptName]
+				Test-Path -Path $file -PathType Leaf | Should -Be $true
+				$fileItem = (Get-Item -Path $file)
+				$fileItem.LastWriteTime | Should -BeGreaterOrEqual $ctx.params.now
+				if($data){
+					@(Import-Csv -Path $file).Count | Should -Be 1
+				}else{
+					$fileItem.Length | Should -Be 0
+				}
 			}
 
 			It 'New-ADPrivReport-NonInteractive' {
@@ -127,8 +160,9 @@ Describe 'AD-Privileged-Audit' {
 			}
 
 			It 'New-ADPrivReport-Interactive' {
+				$batch = $false
+				$batch | Should -Be $false
 				$ctx = Initialize-ADPrivReports
-				Mock Get-ADPrivInteractive {$true}
 				Mock Out-GridView {}
 				New-ADPrivReport -ctx $ctx -name 'sampleNameD' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
 				Should -CommandName Out-GridView -Times 1
@@ -187,8 +221,10 @@ Describe 'AD-Privileged-Audit' {
 
 		Context 'Get-ADPrivObjectCache' {
 			BeforeAll {
+				$noFiles = $true
 				$ctx = Initialize-ADPrivReports
 				# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
+				$noFiles | Should -Be $true
 				$ctx | Should -Not -BeNullOrEmpty
 
 				$mockGetAdFunc = {
@@ -207,11 +243,11 @@ Describe 'AD-Privileged-Audit' {
 						'Server' = $Server
 						'Properties' = $Properties
 					})
-					"sampleData-$InputObject"
+					"sampleData-$InputObject" | Invoke-ADPrivFilter -Filter $Filter
 				}
 				foreach($t in 'User', 'Computer', 'Group', 'Object'){
 					$d = $mockGetAdFunc -replace '$commandName', "Get-AD$($t)"
-					Invoke-Expression "function Get-AD$($t) {$d}"
+					Invoke-Expression "function Get-AD$($t){$d}"
 				}
 			}
 
@@ -362,6 +398,8 @@ Describe 'AD-Privileged-Audit' {
 						Name = 'test-dc'
 						DistinguishedName = 'CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
 						objectClass = 'computer'
+						OperatingSystem = 'Windows Server 2022 Standard'
+						OperatingSystemVersion = '10.0 (20348)'
 					}
 				)
 				$testComputersByDn = $testComputers | Group-Object -Property 'DistinguishedName' -AsHashTable
@@ -393,13 +431,14 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
+					[void](Invoke-ADPrivFilter -Filter $Filter)
 					if($InputObject){
 						if($InputObject -isnot [string]){
-							return $InputObject
+							$InputObject
 						}
 						$u = $testUsersByDn[$InputObject]
 						if($u){
-							return $u
+							$u
 						}
 					}
 				}
@@ -414,13 +453,14 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
+					[void](Invoke-ADPrivFilter -Filter $Filter)
 					if($InputObject){
 						if($InputObject -isnot [string]){
-							return $InputObject
+							$InputObject
 						}
 						$c = $testComputersByDn[$InputObject]
 						if($c){
-							return $c
+							$c
 						}
 					}else{
 						if($SearchBase -eq $ctx.params.domain.DomainControllersContainer){
@@ -453,6 +493,7 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
+					[void](Invoke-ADPrivFilter -Filter $Filter)
 					Get-ADPrivGroup $InputObject
 				}
 
@@ -466,14 +507,15 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
+					[void](Invoke-ADPrivFilter -Filter $Filter)
 					if($InputObject){
 						$o = $testObjectsByDn[$InputObject]
 						if($o){
-							return $o
+							$o
 						}
 					}else{
 						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com' -and $mockLaps){
-							return @(,'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com')
+							@(,'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com')
 						}
 					}
 				}
@@ -492,33 +534,46 @@ Describe 'AD-Privileged-Audit' {
 				$mockLaps | Should -Be $true
 				$mockLapsOnDc = $false
 				$mockLapsOnDc | Should -Be $false
+			}
 
+			It 'Default-Full' {
+				$noFiles = $false
+				$noFiles | Should -Be $false
+				$reportsFolder = Join-Path $reportsFolder 'Default-Full'
 				$ctx = Initialize-ADPrivReports
 				$ctx | Should -Not -BeNullOrEmpty
-			}
-
-			It 'Invoke-ADPrivReports-Default' {
 				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
-				$warnings.Text | Should -Not -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
 			}
 
-			It 'Invoke-ADPrivReports-NoLaps' {
-				$mockLaps = $false
-				$mockLaps | Should -Be $false
-				Invoke-ADPrivReports -ctx $ctx
-				$warnings.Text | Should -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
-			}
+			Context 'DataConditionals' {
+				BeforeEach{
+					$ctx = Initialize-ADPrivReports
+					$ctx | Should -Not -BeNullOrEmpty
+				}
 
-			It 'Invoke-ADPrivReports-LapsOnDc' {
-				$mockLapsOnDc = $true
-				$mockLapsOnDc | Should -Be $true
-				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
-				$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
-			}
+				It 'Invoke-ADPrivReports-Default' {
+					Invoke-ADPrivReports -ctx $ctx | Should -Be $null
+					$warnings.Text | Should -Not -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
+				}
 
-			It 'Invoke-ADPrivReports-PassThru' {
-				$ctx.params.passThru = $true
-				Invoke-ADPrivReports -ctx $ctx | Should -BeOfType [PSCustomObject]
+				It 'Invoke-ADPrivReports-NoLaps' {
+					$mockLaps = $false
+					$mockLaps | Should -Be $false
+					Invoke-ADPrivReports -ctx $ctx
+					$warnings.Text | Should -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
+				}
+
+				It 'Invoke-ADPrivReports-LapsOnDc' {
+					$mockLapsOnDc = $true
+					$mockLapsOnDc | Should -Be $true
+					Invoke-ADPrivReports -ctx $ctx | Should -Be $null
+					$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
+				}
+
+				It 'Invoke-ADPrivReports-PassThru' {
+					$ctx.params.passThru = $true
+					Invoke-ADPrivReports -ctx $ctx | Should -BeOfType [PSCustomObject]
+				}
 			}
 		}
 	}

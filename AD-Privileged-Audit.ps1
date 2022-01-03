@@ -30,10 +30,6 @@ $InformationPreference = 'Continue'
 $version = '2022-01-02'
 $warnings = [System.Collections.ArrayList]::new()
 
-function Get-ADPrivInteractive{
-	!$batch
-}
-
 function Write-Log{
 	[CmdletBinding()]
 	param(
@@ -230,19 +226,19 @@ function Out-ADPrivReports{
 		}
 		$path = ($ctx.filePattern -f ('-' + $name)) + '.csv'
 		if($results){
-			if(!$noFiles){
+			if(!$ctx.params.noFiles){
 				$results | Export-Csv -NoTypeInformation -Path $path
-				$ctx.reportFiles += $path
+				$ctx.reportFiles[$name] = $path
 			}
-			if(Get-ADPrivInteractive){
+			if($ctx.params.interactive){
 				$results | Out-GridView -Title $caption
 			}
-		}elseif(!$noFiles){
+		}elseif(!$ctx.params.noFiles){
 			# Write (or overwrite) an empty file.
 			[System.IO.FileStream]::new(
 					$path, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write
 				).Close()
-			$ctx.reportFiles += $path
+			$ctx.reportFiles[$name] = $path
 		}
 	}
 }
@@ -416,8 +412,8 @@ function Get-ADPrivObjectCache($identity, $class, $ctx){
 			$result = $identity | Get-ADObject @adParams -Properties $ctx.adProps.objectIn
 		}elseif($class -ceq '@PrimaryGroupMembers'){
 			# Simply otherwise calling Get-ADObject here fails to return the computer objects.
-			$result = @(Get-ADUser @adParams -Filter {PrimaryGroup -eq $identity.DistinguishedName} -Properties $ctx.adProps.userIn) `
-				+ @(Get-ADComputer @adParams -Filter {PrimaryGroup -eq $identity.DistinguishedName} -Properties $ctx.adProps.compIn)
+			$result = @(Get-ADUser @adParams -Filter {PrimaryGroup -eq $id} -Properties $ctx.adProps.userIn) `
+				+ @(Get-ADComputer @adParams -Filter {PrimaryGroup -eq $id} -Properties $ctx.adProps.compIn)
 		}else{
 			throw "Unhandled cache type: $class"
 		}
@@ -538,10 +534,13 @@ function Initialize-ADPrivReports(){
 			domain = $null
 			psExe = (Get-Process -Id $PID).Path
 			psVersionTable = $PSVersionTable
+			interactive = !$batch
+			noFiles = $noFiles
+			noZip = $noZip
 			passThru = $PassThru
 		}
 		reports = [ordered]@{}
-		reportFiles = @()
+		reportFiles = [ordered]@{}
 		filePattern = $null
 		adProps = [ordered]@{}
 	}
@@ -551,7 +550,7 @@ function Initialize-ADPrivReports(){
 	$reportsFolder = Get-ADPrivReportsFolder
 	$ctx.params.reportsFolder = $reportsFolder
 	Write-Log ('$reportsFolder: {0}' -f $reportsFolder)
-	if(!$noFiles){
+	if(!$ctx.params.noFiles){
 		[void](New-Item -ItemType Directory -Path $reportsFolder -Force)
 	}
 
@@ -580,12 +579,12 @@ function Initialize-ADPrivReports(){
 	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 	[void](Test-ADPrivIsAdmin $currentUser $domain)
 
-	if(!$noFiles){
+	if(!$ctx.params.noFiles){
 		Write-Log 'Writing parameters JSON file...'
 
 		$paramsJsonPath = $filePattern -f '-params' + '.json'
 		$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
-		$ctx.reportFiles += $paramsJsonPath
+		$ctx.reportFiles['params'] = $paramsJsonPath
 	}
 
 	Initialize-ADPrivProps $ctx
@@ -818,11 +817,11 @@ function Invoke-ADPrivReports($ctx){
 		}
 
 		@(Get-ADComputer -Filter {
-			Enabled -eq $true
-				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')
+			Enabled -eq $true `
+				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*') `
 				-and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)
 		}) + @(Get-ADComputer -Filter {
-			Enabled -eq $true
+			Enabled -eq $true `
 				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')
 		} -SearchBase $ctx.params.domain.DomainControllersContainer) `
 			| Sort-Object -Unique DistinguishedName `
@@ -844,9 +843,9 @@ function Invoke-ADPrivReports($ctx){
 			| ConvertTo-ADPrivRows
 	}
 
-	if(!($noFiles -or $noZip)){
+	if(!($ctx.params.noFiles -or $ctx.params.noZip)){
 		Write-Log 'Creating compressed archive...'
-		Compress-Archive -Path $ctx.reportFiles -DestinationPath ($ctx.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
+		Compress-Archive -Path $ctx.reportFiles.Values -DestinationPath ($ctx.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
 	if($ctx.params.passThru){
@@ -861,7 +860,7 @@ function Invoke-ADPrivMain(){
 			$ctx = Initialize-ADPrivReports
 			Invoke-ADPrivReports -ctx $ctx
 			Write-Log 'Done!'
-			if(Get-ADPrivInteractive){
+			if($ctx.params.interactive){
 				Pause
 			}
 		}else{
@@ -870,7 +869,7 @@ function Invoke-ADPrivMain(){
 		}
 	}catch{
 		Write-Log 'Error:', $_ -Severity ERROR
-		if(Get-ADPrivInteractive){
+		if(!$batch){
 			$_ | Format-List -Force
 			Pause
 		}else{
