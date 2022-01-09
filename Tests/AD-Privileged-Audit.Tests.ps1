@@ -126,6 +126,30 @@ Describe 'AD-Privileged-Audit' {
 			$groupsIn | Should -Not -BeNullOrEmpty
 		}
 
+		Context 'Invoke-ADPrivReportHistory-LAPS'{
+			It 'Invoke-ADPrivReportHistory-LAPS-Rename' {
+				$noFiles = $false
+				$noFiles | Should -Be $false
+				$reportsFolder = Join-Path $reportsFolder 'LAPS-Rename'
+				if(Test-Path $reportsFolder -PathType Container){
+					Get-ChildItem $reportsFolder -File | Remove-Item
+				}
+				$ctx = Initialize-ADPrivReports
+
+				New-Item -Path (Join-Path $reportsFolder 'test.example.com-LAPS-In-2022-01-08.csv') -ItemType File
+
+				Invoke-ADPrivReportHistory -ctx $ctx
+
+				Test-Path (Join-Path $reportsFolder 'test.example.com-lapsIn-2022-01-08.csv') -PathType Leaf | Should -Be $true
+			}
+			It 'Invoke-ADPrivReportHistory-LAPS-NoReports' {
+				$reportsFolder = Join-Path $reportsFolder 'LAPS-NoReports'
+				Test-Path $reportsFolder | Should -Be $false
+				$ctx = Initialize-ADPrivReports
+				Invoke-ADPrivReportHistory -ctx $ctx
+			}
+		}
+
 		Context 'New-ADPrivReport' {
 			It 'New-ADPrivReport-<Name>' -ForEach @(
 				@{Name='Empty'; data=$false}
@@ -552,6 +576,18 @@ Describe 'AD-Privileged-Audit' {
 				$reportsFolder = Join-Path $reportsFolder 'Default-Full'
 				$ctx = Initialize-ADPrivReports
 				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
+			}
+
+			It 'Default-Full-Initial' {
+				$noFiles = $false
+				$noFiles | Should -Be $false
+				$reportsFolder = Join-Path $reportsFolder 'Default-Full-Initial'
+				if(Test-Path $reportsFolder -PathType Container){
+					Get-ChildItem $reportsFolder -File | Remove-Item
+				}
+				$ctx = Initialize-ADPrivReports
+				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
+				Test-Path (Join-Path $reportsFolder 'test.example.com-*-*-Initial.csv') -PathType Leaf | Should -Be $true
 			}
 
 			Context 'DataConditionals' {

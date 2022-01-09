@@ -533,6 +533,7 @@ function Initialize-ADPrivReports(){
 			psVersionTable = $PSVersionTable
 			interactive = !$batch
 			filePattern = $null
+			firstRunFiles = $false
 			noFiles = $noFiles
 			noZip = $noZip
 			passThru = $PassThru
@@ -577,6 +578,12 @@ function Initialize-ADPrivReports(){
 	Write-Log ('$filePattern: {0}' -f $filePattern)
 
 	if(!$ctx.params.noFiles){
+		$firstRunSearch = Join-Path $reportsFolder ($domain.DNSRoot + '-*')
+		if(!(Get-ChildItem -Path $firstRunSearch -File)){
+			Write-Log ('firstRunFiles: {0}' -f $firstRunSearch)
+			$ctx.params.firstRunFiles = $true
+		}
+
 		Write-Log 'Writing parameters JSON file...'
 
 		$paramsJsonPath = $filePattern -f '-params' + '.json'
@@ -679,6 +686,53 @@ function Invoke-ADPrivGroups($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'privGroups' -title 'Privileged AD Groups' -dataSource {
 		$groups | ConvertTo-ADPrivRows -property $ctx.adProps.groupOut
+	}
+}
+
+function Invoke-ADPrivReportHistory($ctx){
+	if(!(Test-Path $ctx.params.reportsFolder -PathType Container)){
+		Write-Log 'Invoke-ADPrivReportHistory: reportsFolder does not exist, exiting.'
+		return
+	}
+
+	New-ADPrivReport -ctx $ctx -name 'reportHistory' -title 'AD Privileged Audit Report History' -dataSource {
+
+		# Rename LAPS report files created prior to 2022-01-08 to standard.
+
+		$reportNameLapsPattern = [regex]::new('(.*)-LAPS-((?:In|Out)-\d{4}-\d{2}-\d{2}\.csv)')
+		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*-LAPS-*.csv') | ForEach-Object{
+			$match = $reportNameLapsPattern.Match($_.Name)
+			if($match.Success){
+				$newName = $match.Groups[1].Value + "-laps" + $match.Groups[2].Value
+				Write-Log ('Renaming prior LAPS CSV to new standard: "{0}" -> "{1}"' -f $_.Name, $newName)
+				Rename-Item -Path $_.FullName -NewName $newName
+			}
+		}
+
+		$reportNamePattern = [regex]::new('(.*)-(.*)-(\d{4}-\d{2}-\d{2})(?:-(initial))?\.csv')
+		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*.csv') -Exclude '*-reportHistory-*' | ForEach-Object{
+			$csvFile = $_
+			$rowCount = (Import-Csv -Path $csvFile | Measure-Object).Count
+			$result = [PSCustomObject][ordered]@{
+				'CsvFile' = $csvFile.Name
+				'Domain' = $null
+				'Report' = $null
+				'Date' = $null
+				'DateSuffix' = $null
+				'RowCount' = $rowCount
+			}
+
+			$match = $reportNamePattern.Match($csvFile.Name)
+			if($match.Success){
+				$result.Domain = $match.Groups[1].Value
+				$result.Report = $match.Groups[2].Value
+				$result.Date = $match.Groups[3].Value
+				$result.DateSuffix = $match.Groups[4].Value
+			}
+
+			$result
+		} | Sort-Object -Property 'Domain', 'Report', 'Date', 'DateSuffix', 'CsvFile' `
+			| ConvertTo-ADPrivRows
 	}
 }
 
@@ -797,14 +851,14 @@ function Invoke-ADPrivReports($ctx){
 					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
 
-		New-ADPrivReport -ctx $ctx -name 'LAPS-Out' -title 'Computers without LAPS or expired.' -dataSource {
+		New-ADPrivReport -ctx $ctx -name 'lapsOut' -title 'Computers without LAPS or expired.' -dataSource {
 			Invoke-LAPSReport {
 				Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 			} | Where-Object {
 				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
 			}
 		}
-		New-ADPrivReport -ctx $ctx -name 'LAPS-In' -title 'Computers with current LAPS.' -dataSource {
+		New-ADPrivReport -ctx $ctx -name 'lapsIn' -title 'Computers with current LAPS.' -dataSource {
 			Invoke-LAPSReport {
 				Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
 			}
@@ -837,9 +891,25 @@ function Invoke-ADPrivReports($ctx){
 			| ConvertTo-ADPrivRows
 	}
 
-	if(!($ctx.params.noFiles -or $ctx.params.noZip)){
-		Write-Log 'Creating compressed archive...'
-		Compress-Archive -Path $ctx.reportFiles.Values -DestinationPath ($ctx.params.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
+	# Post-run File Processing
+
+	if(!($ctx.params.noFiles)){
+		if(!($ctx.params.noZip)){
+			Write-Log 'Creating compressed archive...'
+			$zipPath = $ctx.params.filePattern -f '' + '.zip'
+			Compress-Archive -Path $ctx.reportFiles.Values -DestinationPath $zipPath -CompressionLevel 'Optimal' -Force
+			$ctx.reportFiles['zip'] = $zipPath
+		}
+
+		if($ctx.params.firstRunFiles){
+			Write-Log 'Copying files as initial run...'
+			foreach($f in $ctx.reportFiles.Values){
+				$f2 = $f -replace '\.[^\.\\]+$', '-initial$0'
+				Copy-Item -Path $f -Destination $f2
+			}
+		}
+
+		Invoke-ADPrivReportHistory -ctx $ctx
 	}
 
 	if($ctx.params.passThru){
