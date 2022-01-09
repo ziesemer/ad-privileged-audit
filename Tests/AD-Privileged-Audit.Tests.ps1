@@ -62,7 +62,7 @@ Describe 'AD-Privileged-Audit' {
 		Should -InvokeVerifiable
 	}
 
-	It 'Resolve-ADPrivProps' {
+	It 'Resolve-ADPrivProps-InvalidType' {
 		$ctx = @{
 			adProps = [ordered]@{}
 		}
@@ -196,6 +196,14 @@ Describe 'AD-Privileged-Audit' {
 				$result = 'A' | ConvertTo-ADPrivRows -property 'B', 'C'
 				($result[0].PSObject.Properties | Select-Object -First 1).Name | Should -Be 'Row#'
 				$result[0].'Row#' | Should -Be 1
+			}
+
+			It 'ConvertTo-ADPrivRows-DefaultPropsOrder' {
+				$result = [PSCustomObject][ordered]@{
+					'B' = $null
+					'A' = $null
+				} | ConvertTo-ADPrivRows
+				($result[0].PSObject.Properties).Name | Should -Be @('Row#', 'B', 'A')
 			}
 
 			It 'ConvertTo-ADPrivRows-dateProps' {
@@ -541,7 +549,6 @@ Describe 'AD-Privileged-Audit' {
 				$noFiles | Should -Be $false
 				$reportsFolder = Join-Path $reportsFolder 'Default-Full'
 				$ctx = Initialize-ADPrivReports
-				$ctx | Should -Not -BeNullOrEmpty
 				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
 			}
 

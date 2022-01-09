@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-02
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-08
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-01-02'
+$version = '2022-01-08'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -168,21 +168,18 @@ function ConvertTo-ADPrivRows{
 		$out = [ordered]@{
 			'Row#' = $rowCount++
 		}
-		$row |
-				Get-Member -MemberType Properties |
-				Select-Object -ExpandProperty Name |
-				ForEach-Object{
-			if($dateProps.Contains($_)){
-				$out.($_ + 'Date') = if($null -ne $row.$_){
-					[DateTime]::FromFileTime($row.$_)
+		foreach($p in $row.PSObject.Properties.Name){
+			if($dateProps.Contains($p)){
+				$out.($p + 'Date') = if($null -ne $row.$p){
+					[DateTime]::FromFileTime($row.$p)
 				}else{
 					$null
 				}
 			}
-			if($_ -ieq 'mS-DS-ConsistencyGuid'){
-				$out.$_ = [System.Convert]::ToBase64String($row.$_)
+			if($p -ieq 'mS-DS-ConsistencyGuid'){
+				$out.$p = [System.Convert]::ToBase64String($row.$p)
 			}else{
-				$out.$_ = $row.$_
+				$out.$p = $row.$p
 			}
 		}
 		# The Select-Object here must be called only after the the object is re-created above,
@@ -665,11 +662,8 @@ function Invoke-ADPrivGroups($ctx){
 					GroupName = $group.Name
 				}
 
-				$gm.entry `
-						| Get-Member -MemberType Properties `
-						| Select-Object -ExpandProperty Name `
-						| ForEach-Object{
-					$x.$_ = $gm.entry.$_
+				foreach($p in $gm.entry.PSObject.Properties.Name){
+					$x.$p = $gm.entry.$p
 				}
 				$x.MemberEntry = $gm.entry
 				$x.MemberPathArray = $gm.path
