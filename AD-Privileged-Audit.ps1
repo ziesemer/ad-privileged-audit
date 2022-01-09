@@ -817,6 +817,20 @@ function Invoke-ADPrivReports($ctx){
 			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
 	}
 
+	# Users / computers with future lastLoginTimestamps...
+
+	New-ADPrivReport -ctx $ctx -name 'futureLastLogins' -title 'Future lastLoginTimestamps' -dataSource {
+		# (Consider this comment itself an obligatory "Back to the Future" reference!)
+		$filterDate = $now.AddDays(7)
+		$filter = {
+			Enabled -eq $true -and (lastLogonTimestamp -ge $filterDate)
+		}
+		@(Get-ADUser -Filter $filter -Properties $ctx.adProps.userIn) `
+			+ @(Get-ADComputer -Filter $filter -Properties $ctx.adProps.compIn) `
+			| Sort-Object -Property 'lastLogonTimestamp' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
+	}
+
 	# Computers with unsupported operating systems...
 
 	New-ADPrivReport -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems' -dataSource {

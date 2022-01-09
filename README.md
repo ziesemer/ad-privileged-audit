@@ -84,9 +84,12 @@ Current reports include:
 7. Stale Computers.
 	1. Computers that haven't logged-in within 90 days.
 8. Unsupported Operating Systems.
-9. Computers without LAPS or expired.
-10. Computers with current LAPS.
-11. Warnings.
+9. Future lastLoginTimestamps.
+	1. May appear in hopefully rare cases where the system time on one or more Domain Controllers was set into the future.  There are currently not any known great fixes for this, but such a state shown be made aware of - as impacted objects will maintain their incorrect lastLoginTimestamps and not be updated to current (past) dates.
+10. Computers without LAPS or expired.
+11. Computers with current LAPS.
+12. Warnings.
+13. AD Privileged Audit Report History.
 
 LAPS is Microsoft's "Local Administrator Password Solution".  If you are not yet using it, you should be.
 
