@@ -29,7 +29,7 @@ There are multiple methods and options for executing this script depending upon 
 2. Remote Desktop to a Domain Controller (reference requirements below).
 3. Copy the script to the Desktop of the Domain Controller.  (Should be able to just copy & paste through the RDP session.)
 4. Right-click the script from the Desktop of the Domain Controller, then click "Run with PowerShell".
-5. Reports will be provided directly to the screen (using PowerShell's [`Out-GridView`](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/out-gridview), as well as to dated files in an `AD-Reports` folder that will be created on the Desktop (if it does not already exist).
+5. Reports will be provided directly to the screen (using PowerShell's [`Out-GridView`](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/out-gridview)), as well as to dated files in an `AD-Reports` folder that will be created on the Desktop (if it does not already exist).
 6. The displayed grids can be minimized or closed one-at-a-time as they are reviewed.  Completing the "Press Enter to continue..." prompt in or closing the main PowerShell window will close any remaining windows.
 
 The script will attempt to self-elevate when run.  It will also attempt to resolve mapped drive letters to UNC paths that might otherwise not exist once in the elevated context.  However, there are other complexities that may exist in some environments that are not accounted for here - and the best way to ensure that the script executes is to simply run it from the Desktop, or at least elsewhere on a local drive.
@@ -104,6 +104,18 @@ Each report includes a significant and consistent set of columns of details that
 	1. Membership limits are avoided.  `Get-ADGroupMember` otherwise falls to the limit in Active Directory Web Services (ADWS), where `MaxGroupOrMemberEntries` has a default limit of 5,000.
 	2. ForeignSecurityPrincipals (FSPs) are properly handled - especially for unresolved or orphaned FSPs, or due to insufficient permissions in the foreign domain.
 	3. Group details are included - including for potentially empty groups - along with the nested path by which entity is included.
+
+### lastLoginTimestamp
+
+Currently, this script only consults the `lastLogonTimestamp` attribute.  Unlike `lastLogon`, only `lastLogonTimestamp` is replicated across Domain Controllers - but it not updated in real-time.  [From an old TechNet article](https://techcommunity.microsoft.com/t5/ask-the-directory-services-team/8220-the-lastlogontimestamp-attribute-8221-8211-8220-what-it-was/ba-p/396204):
+
+> It is important to note that the intended purpose of the lastLogontimeStamp attribute to help identify inactive computer and user accounts. The lastLogon attribute is not designed to provide real time logon information. With default settings in place the lastLogontimeStamp will be 9-14 days behind the current date.
+
+See also:
+
+* <https://techcommunity.microsoft.com/t5/ask-the-directory-services-team/8220-the-lastlogontimestamp-attribute-8221-8211-8220-what-it-was/ba-p/396204>
+* <https://docs.microsoft.com/en-us/windows/win32/adschema/a-lastlogontimestamp>
+* <https://social.technet.microsoft.com/wiki/contents/articles/22461.understanding-the-ad-account-attributes-lastlogon-lastlogontimestamp-and-lastlogondate.aspx>
 
 ## Author
 
