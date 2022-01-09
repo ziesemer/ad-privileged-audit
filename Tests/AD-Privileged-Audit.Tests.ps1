@@ -53,7 +53,9 @@ Describe 'AD-Privileged-Audit' {
 	}
 
 	It 'Get-ADPrivReportsFolder' {
-		Get-ADPrivReportsFolder | Should -BeOfType [string]
+		$folder = Get-ADPrivReportsFolder
+		$folder | Should -BeOfType [string]
+		$folder | Should -Not -BeLike '*..*'
 	}
 
 	It 'Test-ADPrivIsAdmin' {

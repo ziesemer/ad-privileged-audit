@@ -221,7 +221,7 @@ function Out-ADPrivReports{
 		if($ctx.params.passThru){
 			$ctx.reports.$name = $results
 		}
-		$path = ($ctx.filePattern -f ('-' + $name)) + '.csv'
+		$path = ($ctx.params.filePattern -f ('-' + $name)) + '.csv'
 		if($results){
 			if(!$ctx.params.noFiles){
 				$results | Export-Csv -NoTypeInformation -Path $path
@@ -500,7 +500,7 @@ function Get-ADPrivReportsFolder(){
 		$desktopPath = [System.Environment]::GetFolderPath([System.Environment+SpecialFolder]::Desktop)
 		$reportsFolder = Join-Path $desktopPath 'AD-Reports'
 	}
-	$reportsFolder
+	$ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($reportsFolder)
 }
 
 function Test-ADPrivIsAdmin($user, $domain){
@@ -532,13 +532,13 @@ function Initialize-ADPrivReports(){
 			psExe = (Get-Process -Id $PID).Path
 			psVersionTable = $PSVersionTable
 			interactive = !$batch
+			filePattern = $null
 			noFiles = $noFiles
 			noZip = $noZip
 			passThru = $PassThru
 		}
 		reports = [ordered]@{}
 		reportFiles = [ordered]@{}
-		filePattern = $null
 		adProps = [ordered]@{}
 	}
 
@@ -567,14 +567,14 @@ function Initialize-ADPrivReports(){
 
 	$domain = $ctx.params.domain = Get-ADDomain
 
-	$filePattern = $ctx.filePattern = Join-Path $reportsFolder `
+	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+	[void](Test-ADPrivIsAdmin $currentUser $domain)
+
+	$filePattern = $ctx.params.filePattern = Join-Path $reportsFolder `
 		($domain.DNSRoot +
 			'{0}-' +
 			(Get-Date -Date $now -Format 'yyyy-MM-dd'))
 	Write-Log ('$filePattern: {0}' -f $filePattern)
-
-	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-	[void](Test-ADPrivIsAdmin $currentUser $domain)
 
 	if(!$ctx.params.noFiles){
 		Write-Log 'Writing parameters JSON file...'
@@ -839,7 +839,7 @@ function Invoke-ADPrivReports($ctx){
 
 	if(!($ctx.params.noFiles -or $ctx.params.noZip)){
 		Write-Log 'Creating compressed archive...'
-		Compress-Archive -Path $ctx.reportFiles.Values -DestinationPath ($ctx.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
+		Compress-Archive -Path $ctx.reportFiles.Values -DestinationPath ($ctx.params.filePattern -f '' + '.zip') -CompressionLevel 'Optimal' -Force
 	}
 
 	if($ctx.params.passThru){
