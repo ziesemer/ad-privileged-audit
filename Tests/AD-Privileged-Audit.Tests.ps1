@@ -84,26 +84,15 @@ Describe 'AD-Privileged-Audit' {
 				param(
 					[Parameter(ValueFromPipeline)]
 					$InputSource,
-					[scriptblock]$Filter
+					$Filter
 				)
+				Begin{
+					Write-Log "Test Invoke-ADPrivFilter filter: $Filter"
+				}
 				Process{
-					if($Filter){
-						$funcs = @{}
-						foreach($f in 'Enabled', 'LastLogonTimestamp', 'PasswordLastSet', 'PasswordNotRequired', 'PrimaryGroup',
-								'OperatingSystem', 'OperatingSystemVersion', 'PrimaryGroupID', 'ms-Mcs-AdmPwd', 'Name', 'SIDHistory'){
-							$funcs[$f] = {}
-						}
-						if($Filter.InvokeWithContext($funcs, $null)){
-							return $PSItem
-						}else{
-							# This can't yet actually process the actual filter, without further work to process the PowerShell Expression Language syntax.
-							# Return all results for now...
-							return $PSItem
-						}
-						return $PSItem
-					}else{
-						return $PSItem
-					}
+					# This can't yet actually process the actual filter, without further work to process the PowerShell Expression Language syntax.
+					# Return all results for now...
+					return $PSItem
 				}
 			}
 		}

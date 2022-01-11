@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-08
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-10
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-01-08'
+$version = '2022-01-10'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -409,8 +409,9 @@ function Get-ADPrivObjectCache($identity, $class, $ctx){
 			$result = $identity | Get-ADObject @adParams -Properties $ctx.adProps.objectIn
 		}elseif($class -ceq '@PrimaryGroupMembers'){
 			# Simply otherwise calling Get-ADObject here fails to return the computer objects.
-			$result = @(Get-ADUser @adParams -Filter {PrimaryGroup -eq $id} -Properties $ctx.adProps.userIn) `
-				+ @(Get-ADComputer @adParams -Filter {PrimaryGroup -eq $id} -Properties $ctx.adProps.compIn)
+			$gsearchId = $id.Replace("'", "''")
+			$result = @(Get-ADUser @adParams -Filter "PrimaryGroup -eq '$gsearchId'" -Properties $ctx.adProps.userIn) `
+				+ @(Get-ADComputer @adParams -Filter "PrimaryGroup -eq '$gsearchId'" -Properties $ctx.adProps.compIn)
 		}else{
 			throw "Unhandled cache type: $class"
 		}
@@ -737,7 +738,7 @@ function Invoke-ADPrivReportHistory($ctx){
 }
 
 function Test-ADPrivRecycleBin($ctx){
-	$recycleBinEnabledScopes = (Get-ADOptionalFeature -Filter {Name -eq 'Recycle Bin Feature'}).EnabledScopes
+	$recycleBinEnabledScopes = (Get-ADOptionalFeature -Filter "Name -eq 'Recycle Bin Feature'").EnabledScopes
 	if($recycleBinEnabledScopes){
 		Write-Log 'AD Recycle Bin is enabled.'
 	}else{
@@ -749,9 +750,8 @@ function Invoke-ADPrivReports($ctx){
 	# Filters support only "simple variable references", no expressions unless shortcutted here.
 	# - https://stackoverflow.com/a/44184818/751158
 
-	$now = $ctx.params.now
-	$filterDate = $ctx.params.filterDate
-	$filterDatePassword = $ctx.params.filterDatePassword
+	$filterDate = $ctx.params.filterDate.ToFileTime()
+	$filterDatePassword = $ctx.params.filterDatePassword.ToFileTime()
 
 	# Privileged AD Groups and Members...
 
@@ -761,9 +761,9 @@ function Invoke-ADPrivReports($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'staleUsers' -title 'Stale Users' -dataSource {
 		Get-ADUser `
-				-Filter {
-					Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
-				} `
+				-Filter (
+					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"
+				) `
 				-Properties $ctx.adProps.userIn `
 			| Sort-Object -Property 'lastLogonTimestamp' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
@@ -773,9 +773,9 @@ function Invoke-ADPrivReports($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords' -dataSource {
 		Get-ADUser `
-				-Filter {
-					Enabled -eq $true -and (PasswordLastSet -lt $filterDatePassword)
-				} `
+				-Filter (
+					"Enabled -eq `$true -and (pwdLastSet -lt $filterDatePassword)"
+				) `
 				-Properties $ctx.adProps.userIn `
 			| Sort-Object -Property 'PasswordLastSet' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
@@ -785,9 +785,9 @@ function Invoke-ADPrivReports($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required' -dataSource {
 		Get-ADUser `
-				-Filter {
-					PasswordNotRequired -eq $true
-				} `
+				-Filter (
+					"PasswordNotRequired -eq `$true"
+				) `
 				-Properties $ctx.adProps.userIn `
 			| Sort-Object -Property 'UserPrincipalName' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
@@ -797,9 +797,9 @@ function Invoke-ADPrivReports($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'sidHistory' -title 'SID History' -dataSource {
 		Get-ADUser `
-				-Filter {
-					SIDHistory -like '*'
-				} `
+				-Filter (
+					"SIDHistory -like '*'"
+				) `
 				-Properties $ctx.adProps.userIn `
 			| Sort-Object -Property 'UserPrincipalName' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
@@ -809,22 +809,22 @@ function Invoke-ADPrivReports($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'staleComps' -title 'Stale Computers' -dataSource {
 		Get-ADComputer `
-				-Filter {
-					Enabled -eq $true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')
-				} `
+				-Filter (
+					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"
+				) `
 				-Properties $ctx.adProps.compIn `
 			| Sort-Object -Property 'lastLogonTimestamp' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
 	}
 
-	# Users / computers with future lastLoginTimestamps...
+	# Users / computers with future lastLogonTimestamps...
 
-	New-ADPrivReport -ctx $ctx -name 'futureLastLogins' -title 'Future lastLoginTimestamps' -dataSource {
+	New-ADPrivReport -ctx $ctx -name 'futureLastLogons' -title 'Future lastLogonTimestamps' -dataSource {
 		# (Consider this comment itself an obligatory "Back to the Future" reference!)
-		$filterDate = $now.AddDays(7)
-		$filter = {
-			Enabled -eq $true -and (lastLogonTimestamp -ge $filterDate)
-		}
+		$filterDate = $ctx.params.now.AddDays(7).ToFileTime()
+		$filter = (
+			"Enabled -eq `$true -and (lastLogonTimestamp -ge $filterDate)"
+		)
 		@(Get-ADUser -Filter $filter -Properties $ctx.adProps.userIn) `
 			+ @(Get-ADComputer -Filter $filter -Properties $ctx.adProps.compIn) `
 			| Sort-Object -Property 'lastLogonTimestamp' `
@@ -835,9 +835,9 @@ function Invoke-ADPrivReports($ctx){
 
 	New-ADPrivReport -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems' -dataSource {
 		Get-ADComputer `
-				-Filter {
-					Enabled -eq $true -and (OperatingSystem -like 'Windows*')
-				} `
+				-Filter (
+					"Enabled -eq `$true -and (OperatingSystem -like 'Windows*')"
+				) `
 				-Properties $ctx.adProps.compIn `
 			| ForEach-Object {
 				$osVer = $_.OperatingSystemVersion -split ' '
@@ -855,8 +855,10 @@ function Invoke-ADPrivReports($ctx){
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
-	$admPwdAttr = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext -Filter {name -eq 'ms-Mcs-AdmPwd'}
+	$admPwdAttr = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext -Filter "name -eq 'ms-Mcs-AdmPwd'"
 	if($admPwdAttr){
+		$now = $ctx.params.now.ToFileTime()
+
 		function Invoke-LAPSReport($filter){
 			Get-ADComputer -Filter $filter `
 					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
@@ -866,27 +868,27 @@ function Invoke-ADPrivReports($ctx){
 		}
 
 		New-ADPrivReport -ctx $ctx -name 'lapsOut' -title 'Computers without LAPS or expired.' -dataSource {
-			Invoke-LAPSReport {
-				Enabled -eq $true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
-			} | Where-Object {
+			Invoke-LAPSReport (
+				"Enabled -eq `$true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
+			 ) | Where-Object {
 				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
 			}
 		}
 		New-ADPrivReport -ctx $ctx -name 'lapsIn' -title 'Computers with current LAPS.' -dataSource {
-			Invoke-LAPSReport {
-				Enabled -eq $true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')
-			}
+			Invoke-LAPSReport (
+				"Enabled -eq `$true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
+			)
 		}
 
-		@(Get-ADComputer -Filter {
-			Enabled -eq $true `
-				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*') `
-				-and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)
-		}) + @(Get-ADComputer -Filter {
-			Enabled -eq $true `
-				-and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')
-		} -SearchBase $ctx.params.domain.DomainControllersContainer) `
-			| Sort-Object -Unique DistinguishedName `
+		@(Get-ADComputer -Filter `
+			("Enabled -eq `$true" `
+				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')" `
+				+ ' -and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)')
+		) + @(Get-ADComputer -Filter `
+			("Enabled -eq `$true" `
+				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')") `
+			-SearchBase $ctx.params.domain.DomainControllersContainer
+		) | Sort-Object -Unique DistinguishedName `
 			| ForEach-Object{
 				Write-Log "LAPS found on possible domain controller: $($_.DistinguishedName)" -Severity WARN
 			}
