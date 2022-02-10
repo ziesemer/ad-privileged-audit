@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-01-10
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-02-10
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-01-10'
+$version = '2022-02-10'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -859,25 +859,28 @@ function Invoke-ADPrivReports($ctx){
 	if($admPwdAttr){
 		$now = $ctx.params.now.ToFileTime()
 
-		function Invoke-LAPSReport($filter){
-			Get-ADComputer -Filter $filter `
+		function Invoke-LAPSReport([string]$adFilter, [scriptblock]$whereFilter){
+			if(!$whereFilter){
+				$whereFilter = {$true}
+			}
+			Get-ADComputer -Filter $adFilter `
 					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
+				| Where-Object $whereFilter `
 				| Sort-Object -Property 'ms-Mcs-AdmPwdExpirationTime', 'lastLogonTimestamp' `
 				| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
 					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
 		}
 
 		New-ADPrivReport -ctx $ctx -name 'lapsOut' -title 'Computers without LAPS or expired.' -dataSource {
-			Invoke-LAPSReport (
-				"Enabled -eq `$true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
-			 ) | Where-Object {
-				-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
-			}
+			Invoke-LAPSReport `
+				-adFilter "Enabled -eq `$true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')" `
+				-whereFilter {
+					-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
+				}
 		}
 		New-ADPrivReport -ctx $ctx -name 'lapsIn' -title 'Computers with current LAPS.' -dataSource {
-			Invoke-LAPSReport (
+			Invoke-LAPSReport `
 				"Enabled -eq `$true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
-			)
 		}
 
 		@(Get-ADComputer -Filter `

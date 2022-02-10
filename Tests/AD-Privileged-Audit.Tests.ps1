@@ -493,11 +493,13 @@ Describe 'AD-Privileged-Audit' {
 						}else{
 							if(([string]$Filter) -notlike '*PrimaryGroupID -eq *'){
 								[PSCustomObject]@{
+									Name = 'test1'
 									DistinguishedName = 'CN=test1,' + $ctx.params.domain.DistinguishedName
 									OperatingSystem = 'Windows Server 2008 R2 Standard'
 									OperatingSystemVersion = '6.1 (7601)'
 								}
 								[PSCustomObject]@{
+									Name = 'test2'
 									DistinguishedName = 'CN=test2,' + $ctx.params.domain.DistinguishedName
 									OperatingSystem = 'Windows 8'
 									OperatingSystemVersion = '6.2 (0000)'
@@ -593,7 +595,7 @@ Describe 'AD-Privileged-Audit' {
 				It 'Invoke-ADPrivReports-NoLaps' {
 					$mockLaps = $false
 					$mockLaps | Should -Be $false
-					Invoke-ADPrivReports -ctx $ctx
+					Invoke-ADPrivReports -ctx $ctx | Should -Be $null
 					$warnings.Text | Should -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
 				}
 
