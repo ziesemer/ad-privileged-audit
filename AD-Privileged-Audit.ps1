@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-02-10
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-02-12
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-02-10'
+$version = '2022-02-12'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -765,7 +765,7 @@ function Invoke-ADPrivReports($ctx){
 					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"
 				) `
 				-Properties $ctx.adProps.userIn `
-			| Sort-Object -Property 'lastLogonTimestamp' `
+			| Sort-Object -Property 'lastLogonTimestamp', 'whenCreated' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
 	}
 
@@ -777,7 +777,7 @@ function Invoke-ADPrivReports($ctx){
 					"Enabled -eq `$true -and (pwdLastSet -lt $filterDatePassword)"
 				) `
 				-Properties $ctx.adProps.userIn `
-			| Sort-Object -Property 'PasswordLastSet' `
+			| Sort-Object -Property 'PasswordLastSet', 'whenCreated' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
 	}
 
@@ -813,7 +813,7 @@ function Invoke-ADPrivReports($ctx){
 					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"
 				) `
 				-Properties $ctx.adProps.compIn `
-			| Sort-Object -Property 'lastLogonTimestamp' `
+			| Sort-Object -Property 'lastLogonTimestamp', 'whenCreated' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
 	}
 
