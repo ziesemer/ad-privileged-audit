@@ -3,4 +3,5 @@
 !/ad-privileged-audit.code-workspace
 !.gitattributes
 !.gitignore
+!.markdownlint.json
 coverage.xml
