@@ -193,8 +193,9 @@ Describe 'AD-Privileged-Audit' {
 			}
 
 			It 'Out-ADPrivReports-PassThru' {
+				$PassThru = $true
+				$PassThru | Should -Be $true
 				$ctx = Initialize-ADPrivReports
-				$ctx.params.passThru = $true
 				[PSCustomObject]@{'Name'='A1'} | Out-ADPrivReports -ctx $ctx -name 'sampleNameF' -title 'Sample Title'
 				$ctx.reports.Count | Should -Be 1
 				$ctx.reports['sampleNameF'][0].Name | Should -Be 'A1'
@@ -423,6 +424,23 @@ Describe 'AD-Privileged-Audit' {
 						objectClass = 'computer'
 						OperatingSystem = 'Windows Server 2022 Standard'
 						OperatingSystemVersion = '10.0 (20348)'
+						PrimaryGroupID = 516
+					}
+					[PSCustomObject]@{
+						Name = 'testComp1'
+						DistinguishedName = 'CN=testComp1,OU=Domain Controllers,DC=example,DC=com'
+						objectClass = 'computer'
+						OperatingSystem = 'Windows Server 2008 R2 Standard'
+						OperatingSystemVersion = '6.1 (7601)'
+						PrimaryGroupID = 515
+					}
+					[PSCustomObject]@{
+						Name = 'testComp2'
+						DistinguishedName = 'CN=testComp2,OU=Domain Controllers,DC=example,DC=com'
+						objectClass = 'computer'
+						OperatingSystem = 'Windows 8'
+						OperatingSystemVersion = '6.2 (0000)'
+						PrimaryGroupID = 515
 					}
 				)
 				$testComputersByDn = $testComputers | Group-Object -Property 'DistinguishedName' -AsHashTable
@@ -463,6 +481,8 @@ Describe 'AD-Privileged-Audit' {
 						if($u){
 							$u
 						}
+					}else{
+						$testUsers
 					}
 				}
 
@@ -492,18 +512,7 @@ Describe 'AD-Privileged-Audit' {
 							}
 						}else{
 							if(([string]$Filter) -notlike '*PrimaryGroupID -eq *'){
-								[PSCustomObject]@{
-									Name = 'test1'
-									DistinguishedName = 'CN=test1,' + $ctx.params.domain.DistinguishedName
-									OperatingSystem = 'Windows Server 2008 R2 Standard'
-									OperatingSystemVersion = '6.1 (7601)'
-								}
-								[PSCustomObject]@{
-									Name = 'test2'
-									DistinguishedName = 'CN=test2,' + $ctx.params.domain.DistinguishedName
-									OperatingSystem = 'Windows 8'
-									OperatingSystemVersion = '6.2 (0000)'
-								}
+								$testComputers
 							}
 						}
 					}
@@ -519,7 +528,11 @@ Describe 'AD-Privileged-Audit' {
 						$Properties
 					)
 					[void](Invoke-ADPrivFilter -Filter $Filter)
-					Get-ADPrivGroup $InputObject
+					if($InputObject){
+						Get-ADPrivGroup $InputObject
+					}else{
+						$testGroups
+					}
 				}
 
 				function Get-ADObject{
@@ -579,6 +592,24 @@ Describe 'AD-Privileged-Audit' {
 				$ctx = Initialize-ADPrivReports
 				Invoke-ADPrivReports -ctx $ctx | Should -Be $null
 				Test-Path (Join-Path $reportsFolder 'test.example.com-*-*-Initial.csv') -PathType Leaf | Should -Be $true
+			}
+
+			It 'Test-ADPrivSidHistory' {
+				$ctx = Initialize-ADPrivReports
+				$ctx.params.passThru = $true
+				Test-ADPrivSidHistory -ctx $ctx
+
+				$objTypes = @{}
+				foreach($h in $ctx.reports['sidHistory']){
+					$typeCol = $objTypes[$h.objectClass]
+					if(!$typeCol){
+						$typeCol = $objTypes[$h.objectClass] = [System.Collections.ArrayList]::new()
+					}
+					[void]$typeCol.Add($h)
+				}
+				@($objTypes['user']).Count | Should -Be $testUsers.Count
+				@($objTypes['computer']).Count | Should -Be $testComputers.Count
+				@($objTypes['group']).Count | Should -Be $testGroups.Count
 			}
 
 			Context 'DataConditionals' {

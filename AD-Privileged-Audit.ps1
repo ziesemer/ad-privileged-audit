@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-02-12
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-03-20
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-02-12'
+$version = '2022-03-20'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -141,10 +141,14 @@ function Initialize-ADPrivProps($ctx){
 		'ObjectClass', 'ObjectGUID', 'mS-DS-ConsistencyGuid',
 		'isCriticalSystemObject', 'ProtectedFromAccidentalDeletion'
 
+	$ctx.adProps.allOut = Resolve-ADPrivProps -generated
 	$ctx.adProps.userIn = Resolve-ADPrivProps 'user'
 	$ctx.adProps.userOut = Resolve-ADPrivProps 'user' -generated
 	$ctx.adProps.compIn = Resolve-ADPrivProps 'computer'
 	$ctx.adProps.compOut = Resolve-ADPrivProps 'computer' -generated
+	$ctx.adProps.groupIn = Resolve-ADPrivProps 'group'
+	$ctx.adProps.groupOut = Resolve-ADPrivProps 'group' -generated
+	$ctx.adProps.objectIn = Resolve-ADPrivProps 'object'
 }
 
 function ConvertTo-ADPrivRows{
@@ -636,10 +640,6 @@ function Get-ADPrivGroup($identity){
 function Invoke-ADPrivGroups($ctx){
 	$groupsIn = New-ADPrivGroups -ctx $ctx
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
-	$ctx.adProps.allOut = Resolve-ADPrivProps -generated
-	$ctx.adProps.objectIn = Resolve-ADPrivProps 'object'
-	$ctx.adProps.groupIn = Resolve-ADPrivProps 'group'
-	$ctx.adProps.groupOut = Resolve-ADPrivProps 'group' -generated
 
 	Initialize-ADPrivObjectCache $ctx
 
@@ -737,6 +737,19 @@ function Invoke-ADPrivReportHistory($ctx){
 	}
 }
 
+function Test-ADPrivSidHistory($ctx){
+	New-ADPrivReport -ctx $ctx -name 'sidHistory' -title 'SID History' -dataSource {
+		$filter = (
+			"SIDHistory -like '*'"
+		)
+		@(Get-ADUser -Filter $filter -Properties $ctx.adProps.userIn) `
+			+ @(Get-ADComputer -Filter $filter -Properties $ctx.adProps.compIn) `
+			+ @(Get-ADGroup -Filter $filter -Properties $ctx.adProps.objectIn) `
+			| Sort-Object -Property 'Name' `
+			| ConvertTo-ADPrivRows -property $ctx.adProps.allOut
+	}
+}
+
 function Test-ADPrivRecycleBin($ctx){
 	$recycleBinEnabledScopes = (Get-ADOptionalFeature -Filter "Name -eq 'Recycle Bin Feature'").EnabledScopes
 	if($recycleBinEnabledScopes){
@@ -793,17 +806,9 @@ function Invoke-ADPrivReports($ctx){
 			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
 	}
 
-	# Users with SIDHistory...
+	# SIDHistory...
 
-	New-ADPrivReport -ctx $ctx -name 'sidHistory' -title 'SID History' -dataSource {
-		Get-ADUser `
-				-Filter (
-					"SIDHistory -like '*'"
-				) `
-				-Properties $ctx.adProps.userIn `
-			| Sort-Object -Property 'UserPrincipalName' `
-			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
-	}
+	Test-ADPrivSidHistory -ctx $ctx
 
 	# Computers that haven't logged-in within # days...
 
