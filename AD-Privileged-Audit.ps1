@@ -43,18 +43,18 @@ function Write-Log{
 		[string]$Severity = 'INFO'
 	)
 
-	if($severity -ceq 'TRACE'){
+	if($Severity -ceq 'TRACE'){
 		$color = [ConsoleColor]::DarkGray
-	}elseif($severity -ceq 'DEBUG'){
+	}elseif($Severity -ceq 'DEBUG'){
 		$color = [ConsoleColor]::Gray
-	}elseif($severity -ceq 'INFO'){
+	}elseif($Severity -ceq 'INFO'){
 		$color = [ConsoleColor]::Cyan
-	}elseif($severity -ceq 'WARN'){
+	}elseif($Severity -ceq 'WARN'){
 		$color = [ConsoleColor]::Yellow
 		[void]$warnings.Add([PSCustomObject]@{
 			Text = $Message
 		})
-	}elseif($severity -ceq 'ERROR'){
+	}elseif($Severity -ceq 'ERROR'){
 		$color = [ConsoleColor]::Red
 	}
 
