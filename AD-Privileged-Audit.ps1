@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-03-20
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-04-08
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-03-20'
+$version = '2022-04-08'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -89,7 +89,7 @@ function Invoke-Elevate{
 		-Verb RunAs
 }
 
-function Resolve-ADPrivProps([string]$class, [switch]$generated){
+function Resolve-ADPrivProps([string]$class, [string]$context=$null, [switch]$generated){
 	$props = [System.Collections.ArrayList]::new()
 	function Expand-ADProp($p){
 		if($p -is [string]){
@@ -104,6 +104,10 @@ function Resolve-ADPrivProps([string]$class, [switch]$generated){
 			}
 		}elseif($p.type -ceq 'generated'){
 			if($generated){
+				Expand-ADProp $p.props
+			}
+		}elseif($p.type -ceq 'context'){
+			if($context -and $context -in @($p.context)){
 				Expand-ADProp $p.props
 			}
 		}else{
@@ -121,7 +125,9 @@ function Initialize-ADPrivProps($ctx){
 		@{type='class'; class='user', 'computer'; props=
 			'Enabled',
 			@{type='generated'; props='lastLogonTimestampDate'}, 'lastLogonTimestamp',
-			'PasswordLastSet', 'LastBadPasswordAttempt', 'PasswordExpired', 'PasswordNeverExpires', 'PasswordNotRequired', 'CannotChangePassword', 'userAccountControl'
+			'PasswordLastSet',
+			@{type='context'; context='stalePasswords'; props='RC4'},
+			'LastBadPasswordAttempt', 'PasswordExpired', 'PasswordNeverExpires', 'PasswordNotRequired', 'CannotChangePassword', 'userAccountControl'
 		},
 		'whenCreated', 'whenChanged',
 		@{type='class'; class='user', 'computer'; props=
@@ -543,6 +549,9 @@ function Initialize-ADPrivReports(){
 			noZip = $noZip
 			passThru = $PassThru
 		}
+		attribs = @{
+			rodcDate = $null
+		}
 		reports = [ordered]@{}
 		reportFiles = [ordered]@{}
 		adProps = [ordered]@{}
@@ -640,6 +649,7 @@ function Get-ADPrivGroup($identity){
 function Invoke-ADPrivGroups($ctx){
 	$groupsIn = New-ADPrivGroups -ctx $ctx
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
+	$rodcSid = $groupsIn['Read-Only Domain Controllers']
 
 	Initialize-ADPrivObjectCache $ctx
 
@@ -679,6 +689,10 @@ function Invoke-ADPrivGroups($ctx){
 				$x.MemberDepth = $gm.path.Count
 
 				[PSCustomObject]$x
+			}
+
+			if($group.objectSid -eq $rodcSid){
+				$ctx.attribs.rodcDate = $group.whenCreated
 			}
 		} | ConvertTo-ADPrivRows -property (@('GroupSid', 'GroupName', 'MemberDepth') + $ctx.adProps.allOut + @('MemberPath'))
 	}
@@ -737,6 +751,49 @@ function Invoke-ADPrivReportHistory($ctx){
 	}
 }
 
+function Test-ADPrivStalePasswords($ctx, $filterDatePasswd){
+	$rodcDate = $ctx.attribs.rodcDate
+	if($rodcDate -and $rodcDate -gt $filterDatePasswd){
+		Write-Log ('Read-Only Domain Controllers (RODC) creation date is more recent than requested stale password filter threshold, using RODC creation date instead: {0}' -f $rodcDate)
+		$filterDatePasswd = $ctx.attribs.rodcDate
+	}
+
+	$filterDatePasswdFt = $filterDatePasswd.ToFileTime()
+	$outProps = Resolve-ADPrivProps 'user' -context 'stalePasswords' -generated
+	$rc4Count = 0
+
+	New-ADPrivReport -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords' -dataSource {
+		Get-ADUser `
+				-Filter (
+					"Enabled -eq `$true -and (pwdLastSet -lt $filterDatePasswdFt)"
+				) `
+				-Properties $ctx.adProps.userIn `
+			| Sort-Object -Property 'PasswordLastSet', 'whenCreated' `
+			| ConvertTo-ADPrivRows -property $outProps `
+			| ForEach-Object{
+				if($rodcDate){
+					$rc4 = $false
+					if($_.PasswordLastSet){
+						if($_.PasswordLastSet -lt $rodcDate){
+							$rc4 = $true
+						}
+					}elseif($_.whenCreated -lt $rodcDate){
+						$rc4 = $true
+					}
+					if($rc4){
+						$_.RC4 = $true
+						([ref]$rc4Count).Value++
+					}
+				}
+				$_
+			}
+	}
+
+	if($rc4Count){
+		Write-Log "stalePasswords: $rc4Count passwords are most likely using insecure RC4 secret keys." -Severity WARN
+	}
+}
+
 function Test-ADPrivSidHistory($ctx){
 	New-ADPrivReport -ctx $ctx -name 'sidHistory' -title 'SID History' -dataSource {
 		$filter = (
@@ -764,7 +821,6 @@ function Invoke-ADPrivReports($ctx){
 	# - https://stackoverflow.com/a/44184818/751158
 
 	$filterDate = $ctx.params.filterDate.ToFileTime()
-	$filterDatePassword = $ctx.params.filterDatePassword.ToFileTime()
 
 	# Privileged AD Groups and Members...
 
@@ -784,15 +840,7 @@ function Invoke-ADPrivReports($ctx){
 
 	# Users with passwords older than # days...
 
-	New-ADPrivReport -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords' -dataSource {
-		Get-ADUser `
-				-Filter (
-					"Enabled -eq `$true -and (pwdLastSet -lt $filterDatePassword)"
-				) `
-				-Properties $ctx.adProps.userIn `
-			| Sort-Object -Property 'PasswordLastSet', 'whenCreated' `
-			| ConvertTo-ADPrivRows -property $ctx.adProps.userOut
-	}
+	Test-ADPrivStalePasswords -ctx $ctx -filterDatePasswd $ctx.params.filterDatePassword
 
 	# Users with PasswordNotRequired set...
 

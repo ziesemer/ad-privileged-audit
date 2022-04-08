@@ -64,13 +64,23 @@ Describe 'AD-Privileged-Audit' {
 		Should -InvokeVerifiable
 	}
 
-	It 'Resolve-ADPrivProps-InvalidType' {
-		$ctx = @{
-			adProps = [ordered]@{}
+	Context 'Resolve-ADPrivProps' {
+		BeforeEach{
+			$ctx = @{
+				adProps = [ordered]@{}
+			}
+			Initialize-ADPrivProps $ctx
 		}
-		Initialize-ADPrivProps $ctx
-		$ctx.adProps.source += @{type='invalidType'}
-		{Resolve-ADPrivProps 'user'} | Should -Throw 'Unhandled property type: invalidType'
+
+		It 'Resolve-ADPrivProps-InvalidType' {
+			$ctx.adProps.source += @{type='invalidType'}
+			{Resolve-ADPrivProps 'user'} | Should -Throw 'Unhandled property type: invalidType'
+		}
+
+		It 'Resolve-ADPrivProps-StalePasswordsContext' {
+			Resolve-ADPrivProps 'user' -generated | Should -Not -Contain 'RC4'
+			Resolve-ADPrivProps 'user' -generated -context 'stalePasswords' | Should -Contain 'RC4'
+		}
 	}
 
 	Context 'With-Mock'{
@@ -377,87 +387,145 @@ Describe 'AD-Privileged-Audit' {
 		Context 'Invoke-ADPrivReports' {
 			# Warning: The following code serves some needed purposes for unit testing, but should NOT be referenced for production code usages!
 			BeforeAll{
-				$testGroups = @(
-					[PSCustomObject]@{
-						Name = 'Domain Admins'
-						DistinguishedName = 'CN=Domain Admins,OU=Users,DC=example,DC=com'
-						objectClass = 'group'
-						GroupScope = 'Global'
-						objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-512')
-						Members = @(
-							'CN=Administrator,OU=Users,DC=example,DC=com',
-							'CN=Administrators,CN=Builtin,DC=example,DC=com',
-							'CN=Invalid,OU=Users,DC=example,DC=com')
-					},
-					[PSCustomObject]@{
-						Name = 'Administrators'
-						DistinguishedName = 'CN=Administrators,CN=Builtin,DC=example,DC=com'
-						objectClass = 'group'
-						GroupScope = 'DomainLocal'
-						objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
-						Members = @('CN=Domain Admins,OU=Users,DC=example,DC=com')
-					},
-					[PSCustomObject]@{
-						Name = 'Domain Controllers'
-						DistinguishedName = 'CN=Domain Controllers,OU=Users,DC=example,DC=com'
-						objectClass = 'group'
-						GroupScope = 'Global'
-						objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-516')
-						Members = @('CN=test-dc,OU=Domain Controllers,DC=example,DC=com')
-					}
-				)
-				$testGroupsByName = $testGroups | Group-Object -Property 'Name' -AsHashTable
+				$testReportsMockCtx = @{
+					laps = $null
+					lapsOnDc = $null
+					testDataDefault = $null
+					testData = $null
+					createDate = Get-Date -Date '2020-01-01'
+					oldPasswordDate = Get-Date -Date '2019-01-01'
+				}
 
-				$testUsers = @(
-					[PSCustomObject]@{
-						Name = 'Administrator'
-						DistinguishedName = 'CN=Administrator,OU=Users,DC=example,DC=com'
-						objectClass = 'user'
+				function Reset-TestReportsMockCtx{
+					foreach($x in @{
+						laps = $true
+						lapsOnDc = $false
+						testData = $testReportsMockCtx.testDataDefault
+						createDate = Get-Date -Date '2020-01-01'
+						oldPasswordDate = Get-Date -Date '2019-01-01'
+					}.GetEnumerator()){
+						$testReportsMockCtx[$x.Name] = $x.Value
 					}
-				)
-				$testUsersByDn = $testUsers | Group-Object -Property 'DistinguishedName' -AsHashTable
+				}
 
-				$testComputers = @(
-					[PSCustomObject]@{
-						Name = 'test-dc'
-						DistinguishedName = 'CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
-						objectClass = 'computer'
-						OperatingSystem = 'Windows Server 2022 Standard'
-						OperatingSystemVersion = '10.0 (20348)'
-						PrimaryGroupID = 516
-					}
-					[PSCustomObject]@{
-						Name = 'testComp1'
-						DistinguishedName = 'CN=testComp1,OU=Domain Controllers,DC=example,DC=com'
-						objectClass = 'computer'
-						OperatingSystem = 'Windows Server 2008 R2 Standard'
-						OperatingSystemVersion = '6.1 (7601)'
-						PrimaryGroupID = 515
-					}
-					[PSCustomObject]@{
-						Name = 'testComp2'
-						DistinguishedName = 'CN=testComp2,OU=Domain Controllers,DC=example,DC=com'
-						objectClass = 'computer'
-						OperatingSystem = 'Windows 8'
-						OperatingSystemVersion = '6.2 (0000)'
-						PrimaryGroupID = 515
-					}
-				)
-				$testComputersByDn = $testComputers | Group-Object -Property 'DistinguishedName' -AsHashTable
+				function New-ADPrivTestData{
+					$testData = @{}
 
-				$testObjects = @(
-					[PSCustomObject]@{
-						DistinguishedName = 'CN=Invalid,OU=Users,DC=example,DC=com'
-						objectClass = 'Invalid'
-					}
-				)
-				$testObjectsByDn = ($testGroups + $testUsers + $testComputers + $testObjects) | Group-Object -Property 'DistinguishedName' -AsHashTable
+					$testData.groups = @(
+						[PSCustomObject]@{
+							Name = 'Domain Admins'
+							DistinguishedName = 'CN=Domain Admins,OU=Users,DC=example,DC=com'
+							objectClass = 'group'
+							GroupScope = 'Global'
+							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-512')
+							Members = @(
+								'CN=Administrator,OU=Users,DC=example,DC=com',
+								'CN=Administrators,CN=Builtin,DC=example,DC=com',
+								'CN=Invalid,OU=Users,DC=example,DC=com')
+						}
+						[PSCustomObject]@{
+							Name = 'Administrators'
+							DistinguishedName = 'CN=Administrators,CN=Builtin,DC=example,DC=com'
+							objectClass = 'group'
+							GroupScope = 'DomainLocal'
+							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
+							Members = @('CN=Domain Admins,OU=Users,DC=example,DC=com')
+						}
+						[PSCustomObject]@{
+							Name = 'Domain Controllers'
+							DistinguishedName = 'CN=Domain Controllers,OU=Users,DC=example,DC=com'
+							objectClass = 'group'
+							GroupScope = 'Global'
+							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-516')
+							Members = @('CN=test-dc,OU=Domain Controllers,DC=example,DC=com')
+						}
+						[PSCustomObject]@{
+							Name = 'Read-Only Domain Controllers'
+							DistinguishedName = 'CN=Read-Only Domain Controllers,OU=Users,DC=example,DC=com'
+							objectClass = 'group'
+							GroupScope = 'Global'
+							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-521')
+							Members = @()
+							whenCreated = $testReportsMockCtx.createDate
+						}
+					)
+					$testData.groupsByName = $testData.groups `
+						| Group-Object -Property 'Name' -AsHashTable
+
+					$testData.users = @(
+						[PSCustomObject]@{
+							Name = 'Administrator'
+							DistinguishedName = 'CN=Administrator,OU=Users,DC=example,DC=com'
+							objectClass = 'user'
+							PasswordLastSet = $testReportsMockCtx.createDate
+							whenCreated = $testReportsMockCtx.createDate
+						}
+						[PSCustomObject]@{
+							Name = 'TestOldPassword1'
+							DistinguishedName = 'CN=TestOldPassword1,OU=Users,DC=example,DC=com'
+							objectClass = 'user'
+							PasswordLastSet = $testReportsMockCtx.oldPasswordDate
+							whenCreated = $testReportsMockCtx.oldPasswordDate
+						}
+						[PSCustomObject]@{
+							Name = 'TestOldPassword2'
+							DistinguishedName = 'CN=TestOldPassword2,OU=Users,DC=example,DC=com'
+							objectClass = 'user'
+							PasswordLastSet = $null
+							whenCreated = $testReportsMockCtx.oldPasswordDate
+						}
+					)
+					$testData.usersByDn = $testData.Users `
+						| Group-Object -Property 'DistinguishedName' -AsHashTable
+
+					$testData.computers = @(
+						[PSCustomObject]@{
+							Name = 'test-dc'
+							DistinguishedName = 'CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
+							objectClass = 'computer'
+							OperatingSystem = 'Windows Server 2022 Standard'
+							OperatingSystemVersion = '10.0 (20348)'
+							PrimaryGroupID = 516
+						}
+						[PSCustomObject]@{
+							Name = 'testComp1'
+							DistinguishedName = 'CN=testComp1,OU=Domain Controllers,DC=example,DC=com'
+							objectClass = 'computer'
+							OperatingSystem = 'Windows Server 2008 R2 Standard'
+							OperatingSystemVersion = '6.1 (7601)'
+							PrimaryGroupID = 515
+						}
+						[PSCustomObject]@{
+							Name = 'testComp2'
+							DistinguishedName = 'CN=testComp2,OU=Domain Controllers,DC=example,DC=com'
+							objectClass = 'computer'
+							OperatingSystem = 'Windows 8'
+							OperatingSystemVersion = '6.2 (0000)'
+							PrimaryGroupID = 515
+						}
+					)
+					$testData.computersByDn = $testData.computers `
+						| Group-Object -Property 'DistinguishedName' -AsHashTable
+
+					$testData.objects = @(
+						[PSCustomObject]@{
+							DistinguishedName = 'CN=Invalid,OU=Users,DC=example,DC=com'
+							objectClass = 'Invalid'
+						}
+					)
+					$testData.objectsByDn = ($testData.groups + $testData.users + $testData.computers + $testdata.objects) `
+						| Group-Object -Property 'DistinguishedName' -AsHashTable
+
+					[PSCustomObject]$testData
+				}
+
+				$testReportsMockCtx.testDataDefault = New-ADPrivTestData
 
 				function Get-ADPrivGroup($identity){
 					if($identity -is [PSCustomObject]){
 						return $identity
 					}
-					$g = $testGroupsByName[$identity]
+					$g = $testReportsMockCtx.testData.groupsByName[$identity]
 					if($g){
 						return $g
 					}
@@ -477,12 +545,12 @@ Describe 'AD-Privileged-Audit' {
 						if($InputObject -isnot [string]){
 							$InputObject
 						}
-						$u = $testUsersByDn[$InputObject]
+						$u = $testReportsMockCtx.testData.usersByDn[$InputObject]
 						if($u){
 							$u
 						}
 					}else{
-						$testUsers
+						$testReportsMockCtx.testData.users
 					}
 				}
 
@@ -496,23 +564,24 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
+					$testData = $testReportsMockCtx.testData
 					[void](Invoke-ADPrivFilter -Filter $Filter)
 					if($InputObject){
 						if($InputObject -isnot [string]){
 							$InputObject
 						}
-						$c = $testComputersByDn[$InputObject]
+						$c = $testData.computersByDn[$InputObject]
 						if($c){
 							$c
 						}
 					}else{
 						if($SearchBase -eq $ctx.params.domain.DomainControllersContainer){
-							if($mockLapsOnDc){
-								$testComputersByDn['CN=test-dc,OU=Domain Controllers,DC=example,DC=com']
+							if($testReportsMockCtx.lapsOnDc){
+								$testData.computersByDn['CN=test-dc,OU=Domain Controllers,DC=example,DC=com']
 							}
 						}else{
 							if(([string]$Filter) -notlike '*PrimaryGroupID -eq *'){
-								$testComputers
+								$testData.computers
 							}
 						}
 					}
@@ -531,7 +600,7 @@ Describe 'AD-Privileged-Audit' {
 					if($InputObject){
 						Get-ADPrivGroup $InputObject
 					}else{
-						$testGroups
+						$testReportsMockCtx.testData.groups
 					}
 				}
 
@@ -547,12 +616,12 @@ Describe 'AD-Privileged-Audit' {
 					)
 					[void](Invoke-ADPrivFilter -Filter $Filter)
 					if($InputObject){
-						$o = $testObjectsByDn[$InputObject]
+						$o = $testReportsMockCtx.testData.objectsByDn[$InputObject]
 						if($o){
 							$o
 						}
 					}else{
-						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com' -and $mockLaps){
+						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com' -and $testReportsMockCtx.laps){
 							@(,'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com')
 						}
 					}
@@ -568,10 +637,7 @@ Describe 'AD-Privileged-Audit' {
 			}
 
 			BeforeEach{
-				$mockLaps = $true
-				$mockLaps | Should -Be $true
-				$mockLapsOnDc = $false
-				$mockLapsOnDc | Should -Be $false
+				Reset-TestReportsMockCtx
 			}
 
 			It 'Default-Full' {
@@ -607,9 +673,10 @@ Describe 'AD-Privileged-Audit' {
 					}
 					[void]$typeCol.Add($h)
 				}
-				@($objTypes['user']).Count | Should -Be $testUsers.Count
-				@($objTypes['computer']).Count | Should -Be $testComputers.Count
-				@($objTypes['group']).Count | Should -Be $testGroups.Count
+				$testData = $testReportsMockCtx.testData
+				@($objTypes['user']).Count | Should -Be $testData.users.Count
+				@($objTypes['computer']).Count | Should -Be $testData.computers.Count
+				@($objTypes['group']).Count | Should -Be $testData.groups.Count
 			}
 
 			Context 'DataConditionals' {
@@ -624,15 +691,13 @@ Describe 'AD-Privileged-Audit' {
 				}
 
 				It 'Invoke-ADPrivReports-NoLaps' {
-					$mockLaps = $false
-					$mockLaps | Should -Be $false
+					$testReportsMockCtx.laps = $false
 					Invoke-ADPrivReports -ctx $ctx | Should -Be $null
 					$warnings.Text | Should -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
 				}
 
 				It 'Invoke-ADPrivReports-LapsOnDc' {
-					$mockLapsOnDc = $true
-					$mockLapsOnDc | Should -Be $true
+					$testReportsMockCtx.lapsOnDc = $true
 					Invoke-ADPrivReports -ctx $ctx | Should -Be $null
 					$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
 				}
@@ -640,6 +705,94 @@ Describe 'AD-Privileged-Audit' {
 				It 'Invoke-ADPrivReports-PassThru' {
 					$ctx.params.passThru = $true
 					Invoke-ADPrivReports -ctx $ctx | Should -BeOfType [PSCustomObject]
+				}
+
+				Context 'Invoke-ADPrivReports-StalePasswordsRodcDate' {
+					BeforeEach{
+						$rodcLog = @($false)
+
+						$writeLog = Get-Command Write-Log
+						Mock Write-Log{
+							& $writeLog @args
+							$rodcLog[0] = $true
+						} -ParameterFilter {
+							$Severity -eq '' `
+								-and $Message -eq ("Read-Only Domain Controllers (RODC) creation date is more recent than requested stale password filter threshold, using RODC creation date instead: {0}" -f $rodcDate)
+						}
+					}
+
+					It 'Invoke-ADPrivReports-StalePasswordsRodcDate-Default' {
+						Invoke-ADPrivReports -ctx $ctx
+						$ctx.attribs.rodcDate | Should -Be $testReportsMockCtx.createDate
+						$rodcLog[0] | Should -Be $false
+					}
+
+					It 'Invoke-ADPrivReports-StalePasswordsRodcDate-RecentUpgrade' {
+						# Tests recent 2008 functional level upgrade.
+
+						$rodcDate = (Get-Date).AddDays(-15)
+						$testReportsMockCtx.testData = New-ADPrivTestData
+						$testReportsMockCtx.testData.groupsByName['Read-Only Domain Controllers'][0].whenCreated = $rodcDate
+
+						Invoke-ADPrivReports -ctx $ctx
+						$ctx.attribs.rodcDate | Should -Be $rodcDate
+						$rodcLog[0] | Should -Be $true
+					}
+
+					It 'Invoke-ADPrivReports-StalePasswordsRodcDate-MissingRODC' {
+						$testReportsMockCtx.testData = New-ADPrivTestData
+						$testReportsMockCtx.testData.groupsByName.Remove('Read-Only Domain Controllers')
+
+						Invoke-ADPrivReports -ctx $ctx
+						$ctx.attribs.rodcDate | Should -Be $null
+						$rodcLog[0] | Should -Be $false
+					}
+				}
+			}
+
+			Context 'Default-Checks' {
+				BeforeAll{
+					Reset-TestReportsMockCtx
+
+					$batch = $true
+					$noFiles = $true
+					$ctx = Initialize-ADPrivReports
+					$ctx.params.passThru = $true
+
+					# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
+					$batch -and $noFiles | Should -Be $true
+
+					$results = Invoke-ADPrivReports -ctx $ctx
+					$results | Should -BeOfType [PSCustomObject]
+				}
+
+				Context 'RC4-Passwords' {
+					BeforeAll{
+						$stalePasswords = @{}
+						foreach($p in $results.reports['stalePasswords']){
+							$stalePasswords[$p.Name] = $p
+						}
+						# As this is executing in BeforeAll vs. BeforeEach, need to keep a copy before the warnings are cleared in the parent BeforeEach.
+						$testWarnings = $warnings.Clone()
+						$testWarnings | Should -Not -Be $null
+					}
+
+					It 'RC4-Warnings' {
+						$testWarnings.Text | Should -Contain 'stalePasswords: 2 passwords are most likely using insecure RC4 secret keys.'
+					}
+
+					It 'RC4-Passwords-Administrator' {
+						$stalePasswords['Administrator'].RC4 | Should -Be $null
+					}
+
+					It 'RC4-Passwords-TestOldPasswords' {
+						$op1 = $stalePasswords['TestOldPassword1']
+						$op1.RC4 | Should -Be $true
+						$op1.PasswordLastSet | Should -BeOfType [DateTime]
+						$op2 = $stalePasswords['TestOldPassword2']
+						$op2.RC4 | Should -Be $true
+						$op2.PasswordLastSet | Should -Be $null
+					}
 				}
 			}
 		}

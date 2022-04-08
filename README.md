@@ -83,6 +83,11 @@ Current reports include:
 4. Stale Passwords (`stalePasswords`).
 	1. Users with passwords older than 365 days (1 year).
 	2. A stale password is a stale password, regardless of if the account is being used in AD and/or AAD (unlike with Stale Users, above).
+	3. This report will also identify as a dedicated column (`RC4`) if any account is determined to use even older / insecure RC4 secret keys instead or AES.
+		1. This is based on a PasswordLastSet date being older than a domain functional level upgrade to 2008, as determined by the creation date of the "Read-Only Domain Controllers" (RODC) security group.
+		2. If the creation date of the RODC group happens to be more recent than the default search (365 days), the date threshold of the search will be automatically adjusted to match to ensure any such accounts are included in the report.
+		3. References:
+			1. <https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/decrypting-the-selection-of-supported-kerberos-encryption-types/ba-p/1628797>
 5. Password Not Required (`passwordNotRequired`).
 	1. Interdomain trust accounts - where the UserAccountControl is 0x820 (2080) - can be safely ignored here as long as the account is recognized as part of a current and valid domain trust.  See <https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties> for details of these values.  Exclusions for this may be added in the future with some further considerations around this.
 6. SID History (`sidHistory`).
@@ -100,8 +105,9 @@ Current reports include:
 		2. If an expected AD privileged group is not found, or with an unexpected SID ([Group Considerations](#group-considerations)).
 			1. Such warnings here may be expected in child domains of a forest, where "Enterprise Admins" and "Schema Admins" will not exist.  "DHCP Administrators" may also be an expected missing group.
 		3. For any circular references in privileged AD group memberships.
-		4. If [LAPS](#laps) is not deployed, or found on a possible DC.
-		5. If the AD Recycle Bin is not enabled.
+		4. If one or more user accounts exist that are determined to use RC4 from within the "Stale Passwords" report (`stalePasswords`, above).
+		5. If [LAPS](#laps) is not deployed, or found on a possible DC.
+		6. If the AD Recycle Bin is not enabled.
 13. AD Privileged Audit Report History (`reportHistory`).
 
 Each report includes a significant and consistent set of columns of details that should remove most of the need for cross-referencing Active Directory Users and Computers (ADUC) or other similar tools for further details on reported objects, as well as providing some value in terms of digital forensics.
