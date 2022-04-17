@@ -99,7 +99,20 @@ Current reports include:
 10. Computers without [LAPS](#laps) or expired (`lapsOut`).
 11. Computers with current [LAPS](#laps) (`lapsIn`).
 	1. This report is the inverse of `lapsOut` - and opposite of all the others in that a higher result count here is better.
-12. Warnings (`warnings`).
+12. Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`).
+	1. Details any usage of Azure Active Directory (AAD) Password Protection, as detailed at <https://docs.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad-on-premises>.
+		1. This report details any servers that are a Domain Controller, running the DC agent, and/or running the proxy service.
+		2. Any agent/proxy version and heartbeat timestamp, agent password policy date, and proxy tenant name and ID are reported for each.
+			1. Current version numbers may be referenced from the solution's [Agent version history](https://docs.microsoft.com/en-us/azure/active-directory/authentication/howto-password-ban-bad-on-premises-agent-versions) page.
+		3. These details are similar to what is provided the `Get-AzureADPasswordProtectionDCAgent` and `Get-AzureADPasswordProtectionProxy` cmdlets as provided by the AzureADPasswordProtection PowerShell module that are installed on the proxy servers - but directly reference the details stored in Active Directory, and without needing to connect to any proxy server or otherwise having the PowerShell module installed local to the execution of this script.  As detailed at the solution's [Monitor](https://docs.microsoft.com/en-us/azure/active-directory/authentication/howto-password-ban-bad-on-premises-monitor) page, these details should typically be updated on an hourly basis, and are still subject to Active Directory's replication latency.
+	2. Warnings will be logged for any of the following:
+		1. If the AAD Password Protection solution is not deployed.
+			1. This includes a reminder that [AAD Premium licensing is required](https://docs.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad#license-requirements) to utilize this feature.
+		2. If the DC agent is not consistently deployed to every Domain Controller.
+		3. If no proxies are found.
+		4. If only 1 proxy is found for more than one Domain Controller.
+			1. This is not a requirement, but a recommendation for high availability of the solution.
+13. Warnings (`warnings`).
 	1. Current reported warnings include:
 		1. If the script is not running as a Domain Administrator, as results may be incomplete ([Dependencies](#dependencies)).
 		2. If an expected AD privileged group is not found, or with an unexpected SID ([Group Considerations](#group-considerations)).
@@ -107,8 +120,9 @@ Current reports include:
 		3. For any circular references in privileged AD group memberships.
 		4. If one or more user accounts exist that are determined to use RC4 from within the "Stale Passwords" report (`stalePasswords`, above).
 		5. If [LAPS](#laps) is not deployed, or found on a possible DC.
-		6. If the AD Recycle Bin is not enabled.
-13. AD Privileged Audit Report History (`reportHistory`).
+		6. Any warnings from Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`), as described above.
+		7. If the AD Recycle Bin is not enabled.
+14. AD Privileged Audit Report History (`reportHistory`).
 
 Each report includes a significant and consistent set of columns of details that should remove most of the need for cross-referencing Active Directory Users and Computers (ADUC) or other similar tools for further details on reported objects, as well as providing some value in terms of digital forensics.
 

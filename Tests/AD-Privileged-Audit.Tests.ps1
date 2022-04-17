@@ -94,15 +94,28 @@ Describe 'AD-Privileged-Audit' {
 				param(
 					[Parameter(ValueFromPipeline)]
 					$InputSource,
-					$Filter
+					[string]$Filter
 				)
 				Begin{
 					Write-Log "Test Invoke-ADPrivFilter filter: $Filter"
 				}
 				Process{
 					# This can't yet actually process the actual filter, without further work to process the PowerShell Expression Language syntax.
-					# Return all results for now...
-					return $PSItem
+					if($Filter -match 'ObjectClass -eq ''serviceConnectionPoint'' -and keywords -like ''([^'']+)'''){
+						if($PSItem.ObjectClass -eq 'serviceConnectionPoint' -and $PSItem.keywords -like $Matches.1){
+							return $PSItem
+						}
+					}elseif($Filter -match 'PrimaryGroupID -eq (\d+)'){
+						if($PSItem.PrimaryGroupID -eq $Matches.1){
+							return $PSItem
+						}
+					}elseif($Filter -match 'PrimaryGroup -eq ''(.+)'''){
+						if($PSItem.PrimaryGroup -eq $Matches.1){
+							return $PSItem
+						}
+					}else{
+						return $PSItem
+					}
 				}
 			}
 		}
@@ -277,7 +290,7 @@ Describe 'AD-Privileged-Audit' {
 						'Server' = $Server
 						'Properties' = $Properties
 					})
-					"sampleData-$InputObject" | Invoke-ADPrivFilter -Filter $Filter
+					"sampleData-$InputObject"
 				}
 				foreach($t in 'User', 'Computer', 'Group', 'Object'){
 					$d = $mockGetAdFunc -replace '$commandName', "Get-AD$($t)"
@@ -376,7 +389,7 @@ Describe 'AD-Privileged-Audit' {
 				function Get-ADOptionalFeature{
 					@{EnabledScopes=@(
 						'CN=Partitions,CN=Configuration,DC=example,DC=com',
-						'CN=NTDS Settings,CN=test-dc,CN=Servers,CN=Default-First-Site-Name,CN=Sites,CN=Configuration,DC=example,DC=com'
+						'CN=NTDS Settings,CN=test-dc1,CN=Servers,CN=Default-First-Site-Name,CN=Sites,CN=Configuration,DC=example,DC=com'
 					)}
 				}
 				Test-ADPrivRecycleBin
@@ -415,7 +428,7 @@ Describe 'AD-Privileged-Audit' {
 						[PSCustomObject]@{
 							Name = 'Domain Admins'
 							DistinguishedName = 'CN=Domain Admins,OU=Users,DC=example,DC=com'
-							objectClass = 'group'
+							ObjectClass = 'group'
 							GroupScope = 'Global'
 							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-512')
 							Members = @(
@@ -426,7 +439,7 @@ Describe 'AD-Privileged-Audit' {
 						[PSCustomObject]@{
 							Name = 'Administrators'
 							DistinguishedName = 'CN=Administrators,CN=Builtin,DC=example,DC=com'
-							objectClass = 'group'
+							ObjectClass = 'group'
 							GroupScope = 'DomainLocal'
 							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-32-544')
 							Members = @('CN=Domain Admins,OU=Users,DC=example,DC=com')
@@ -434,15 +447,18 @@ Describe 'AD-Privileged-Audit' {
 						[PSCustomObject]@{
 							Name = 'Domain Controllers'
 							DistinguishedName = 'CN=Domain Controllers,OU=Users,DC=example,DC=com'
-							objectClass = 'group'
+							ObjectClass = 'group'
 							GroupScope = 'Global'
 							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-516')
-							Members = @('CN=test-dc,OU=Domain Controllers,DC=example,DC=com')
+							Members = @(
+								'CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
+								'CN=test-dc2,OU=Domain Controllers,DC=example,DC=com'
+							)
 						}
 						[PSCustomObject]@{
 							Name = 'Read-Only Domain Controllers'
 							DistinguishedName = 'CN=Read-Only Domain Controllers,OU=Users,DC=example,DC=com'
-							objectClass = 'group'
+							ObjectClass = 'group'
 							GroupScope = 'Global'
 							objectSid = [System.Security.Principal.SecurityIdentifier]::new('S-1-5-21-3580816576-12345678901-1234567890-521')
 							Members = @()
@@ -453,54 +469,70 @@ Describe 'AD-Privileged-Audit' {
 						| Group-Object -Property 'Name' -AsHashTable
 
 					$testData.users = @(
-						[PSCustomObject]@{
+						@{
 							Name = 'Administrator'
 							DistinguishedName = 'CN=Administrator,OU=Users,DC=example,DC=com'
-							objectClass = 'user'
 							PasswordLastSet = $testReportsMockCtx.createDate
 							whenCreated = $testReportsMockCtx.createDate
 						}
-						[PSCustomObject]@{
+						@{
 							Name = 'TestOldPassword1'
 							DistinguishedName = 'CN=TestOldPassword1,OU=Users,DC=example,DC=com'
-							objectClass = 'user'
 							PasswordLastSet = $testReportsMockCtx.oldPasswordDate
 							whenCreated = $testReportsMockCtx.oldPasswordDate
 						}
-						[PSCustomObject]@{
+						@{
 							Name = 'TestOldPassword2'
 							DistinguishedName = 'CN=TestOldPassword2,OU=Users,DC=example,DC=com'
-							objectClass = 'user'
 							PasswordLastSet = $null
 							whenCreated = $testReportsMockCtx.oldPasswordDate
 						}
-					)
+					) | ForEach-Object{
+						$_.ObjectClass = 'user'
+						$_.PrimaryGroup = 'CN=Domain Users,OU=Users,DC=example,DC=com'
+						$_.PrimaryGruopID = 513
+						[PSCustomObject]$_
+					}
 					$testData.usersByDn = $testData.Users `
 						| Group-Object -Property 'DistinguishedName' -AsHashTable
 
 					$testData.computers = @(
-						[PSCustomObject]@{
-							Name = 'test-dc'
-							DistinguishedName = 'CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
-							objectClass = 'computer'
-							OperatingSystem = 'Windows Server 2022 Standard'
-							OperatingSystemVersion = '10.0 (20348)'
-							PrimaryGroupID = 516
+						foreach($dcNum in 1..2){
+							[PSCustomObject]@{
+								Name = "test-dc$dcNum"
+								DistinguishedName = "CN=test-dc$dcNum,OU=Domain Controllers,DC=example,DC=com"
+								ObjectClass = 'computer'
+								OperatingSystem = 'Windows Server 2022 Standard'
+								OperatingSystemVersion = '10.0 (20348)'
+								PrimaryGroup = 'CN=Domain Controllers,OU=Users,DC=example,DC=com'
+								PrimaryGroupID = 516
+							}
 						}
 						[PSCustomObject]@{
 							Name = 'testComp1'
-							DistinguishedName = 'CN=testComp1,OU=Domain Controllers,DC=example,DC=com'
-							objectClass = 'computer'
+							DistinguishedName = 'CN=testComp1,CN=Computers,DC=example,DC=com'
+							ObjectClass = 'computer'
 							OperatingSystem = 'Windows Server 2008 R2 Standard'
 							OperatingSystemVersion = '6.1 (7601)'
+							PrimaryGroup = 'CN=Domain Computers,OU=Users,DC=example,DC=com'
 							PrimaryGroupID = 515
 						}
 						[PSCustomObject]@{
 							Name = 'testComp2'
-							DistinguishedName = 'CN=testComp2,OU=Domain Controllers,DC=example,DC=com'
-							objectClass = 'computer'
+							DistinguishedName = 'CN=testComp2,CN=Computers,DC=example,DC=com'
+							ObjectClass = 'computer'
 							OperatingSystem = 'Windows 8'
 							OperatingSystemVersion = '6.2 (0000)'
+							PrimaryGroup = 'CN=Domain Computers,OU=Users,DC=example,DC=com'
+							PrimaryGroupID = 515
+						}
+						[PSCustomObject]@{
+							Name = 'testComp3'
+							DistinguishedName = 'CN=testComp3,CN=Computers,DC=example,DC=com'
+							ObjectClass = 'computer'
+							OperatingSystem = 'Windows Server 2022 Standard'
+							OperatingSystemVersion = '10.0 (20348)'
+							PrimaryGroup = 'CN=Domain Computers,OU=Users,DC=example,DC=com'
 							PrimaryGroupID = 515
 						}
 					)
@@ -510,7 +542,36 @@ Describe 'AD-Privileged-Audit' {
 					$testData.objects = @(
 						[PSCustomObject]@{
 							DistinguishedName = 'CN=Invalid,OU=Users,DC=example,DC=com'
-							objectClass = 'Invalid'
+							ObjectClass = 'Invalid'
+						}
+						[PSCustomObject]@{
+							DistinguishedName = 'CN=AzureADPasswordProtectionDCAgent,CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
+							ObjectClass = 'serviceConnectionPoint'
+							'msDS-Settings' = '{"SoftwareVersion":"1.2.177.1","ServerFQDN":"test-dc1.example.com",' +
+								'"HeartbeatUTC":"2022-04-10T20:11:14.0595804Z","PasswordPolicyDateUTC":"2022-04-10T20:10:12.3456789Z",' +
+								'"Site":"Default-First-Site-Name","Domain":"example.com","Forest":"example.com","TenantName":"","TenantId":""}'
+							'keywords' = @('{2BAC71E6-A293-4D5B-BA3B-50B995237946};Domain=example.com')
+						}
+						[PSCustomObject]@{
+							DistinguishedName = 'CN=Invalid,CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
+							ObjectClass = 'serviceConnectionPoint'
+							'keywords' = @('{2BAC71E6-A293-4D5B-BA3B-50B995237946};Domain=example.com')
+						}
+						foreach($path in 'CN=test-dc2,OU=Domain Controllers', 'CN=testComp3,CN=Computers'){
+							[PSCustomObject]@{
+								DistinguishedName = "CN=AzureADPasswordProtectionProxy,$path,DC=example,DC=com"
+								ObjectClass = 'serviceConnectionPoint'
+								# This is an overly-simplified mock-up.
+								# Specifically, this uses the HS256 algorithm instead of RS256 that would normally be seen here for signing, but this should suffice for the needs here.
+								'msDS-Settings' = `
+									'eyJhbGciOiJIUzI1NiJ9.eyJTb2Z0d2FyZVZlcnNpb24iOiIxLjIuMTI1LjAiLCJIZWFydGJlYXRVdGMiOiIyMDIyLTA0LTEwVDIxOjA5OjAzLjEyMDUzOD' +
+									'ZaIiwiU2VydmVyRlFETiI6InRlc3QtZGMxLmV4YW1wbGUuY29tIiwiRG9tYWluIjoiZXhhbXBsZS5jb20iLCJGb3Jlc3QiOiJleGFtcGxlLmNvbSIsIkhvc' +
+									'3RDb21wdXRlclNpZCI6IlMtMS01LTIxLTM1ODA4MTY1NzYtMTIzNDU2Nzg5MDEtMTIzNDU2Nzg5MC0xMDAxIiwiVGVuYW50TmFtZSI6ImV4YW1wbGUuY29t' +
+									'IiwiVGVuYW50SWQiOiI3MjY0QTM4OS1EM0M2LTQ5OTMtODdGQi0zNUE3RUQ0N0VBOTgiLCJTZXJ2ZXJBbm5vdGF0aW9uIjoiQUFEUHdkUHJvdFByb3h5LUN' +
+									'DMDQyRDhBLUJGODItNEEyNi05RDEwLTgyRkYzNTQyRkNBNyIsIlNpZ25lZFByb3h5Q2VydGlmaWNhdGVDaGFpbiI6IlUwRk5VRXhGIn0.bomgyG0bEx8XMq' +
+									'GbQ795qo8XPYWw8RpRAZfBMMM6JCo'
+								'keywords' = @('{ebefb703-6113-413d-9167-9f8dd4d24468};Domain=example.com')
+							}
 						}
 					)
 					$testData.objectsByDn = ($testData.groups + $testData.users + $testData.computers + $testdata.objects) `
@@ -540,8 +601,7 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
-					[void](Invoke-ADPrivFilter -Filter $Filter)
-					if($InputObject){
+					@(if($InputObject){
 						if($InputObject -isnot [string]){
 							$InputObject
 						}
@@ -551,7 +611,7 @@ Describe 'AD-Privileged-Audit' {
 						}
 					}else{
 						$testReportsMockCtx.testData.users
-					}
+					}) | Invoke-ADPrivFilter -Filter $Filter
 				}
 
 				function Get-ADComputer{
@@ -559,14 +619,17 @@ Describe 'AD-Privileged-Audit' {
 					param(
 						[Parameter(ValueFromPipeline)]
 						$InputObject,
+						$Identity,
 						$Filter,
 						$SearchBase,
 						$Server,
 						$Properties
 					)
 					$testData = $testReportsMockCtx.testData
-					[void](Invoke-ADPrivFilter -Filter $Filter)
-					if($InputObject){
+					if($Identity){
+						$InputObject = $Identity
+					}
+					@(if($InputObject){
 						if($InputObject -isnot [string]){
 							$InputObject
 						}
@@ -577,14 +640,12 @@ Describe 'AD-Privileged-Audit' {
 					}else{
 						if($SearchBase -eq $ctx.params.domain.DomainControllersContainer){
 							if($testReportsMockCtx.lapsOnDc){
-								$testData.computersByDn['CN=test-dc,OU=Domain Controllers,DC=example,DC=com']
+								$testData.computersByDn['CN=test-dc1,OU=Domain Controllers,DC=example,DC=com']
 							}
 						}else{
-							if(([string]$Filter) -notlike '*PrimaryGroupID -eq *'){
-								$testData.computers
-							}
+							$testData.computers
 						}
-					}
+					}) | Invoke-ADPrivFilter -Filter $Filter
 				}
 
 				function Get-ADGroup{
@@ -596,12 +657,11 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
-					[void](Invoke-ADPrivFilter -Filter $Filter)
-					if($InputObject){
+					@(if($InputObject){
 						Get-ADPrivGroup $InputObject
 					}else{
 						$testReportsMockCtx.testData.groups
-					}
+					}) | Invoke-ADPrivFilter -Filter $Filter
 				}
 
 				function Get-ADObject{
@@ -614,17 +674,20 @@ Describe 'AD-Privileged-Audit' {
 						$Server,
 						$Properties
 					)
-					[void](Invoke-ADPrivFilter -Filter $Filter)
-					if($InputObject){
+					@(if($InputObject){
 						$o = $testReportsMockCtx.testData.objectsByDn[$InputObject]
 						if($o){
 							$o
 						}
 					}else{
-						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com' -and $testReportsMockCtx.laps){
-							@(,'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com')
+						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com'){
+							if($testReportsMockCtx.laps){
+								@(,'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com')
+							}
+						}else{
+							$testReportsMockCtx.testData.objects
 						}
-					}
+					}) | Invoke-ADPrivFilter -Filter $Filter
 				}
 
 				function Get-ADRootDSE{
@@ -667,9 +730,9 @@ Describe 'AD-Privileged-Audit' {
 
 				$objTypes = @{}
 				foreach($h in $ctx.reports['sidHistory']){
-					$typeCol = $objTypes[$h.objectClass]
+					$typeCol = $objTypes[$h.ObjectClass]
 					if(!$typeCol){
-						$typeCol = $objTypes[$h.objectClass] = [System.Collections.ArrayList]::new()
+						$typeCol = $objTypes[$h.ObjectClass] = [System.Collections.ArrayList]::new()
 					}
 					[void]$typeCol.Add($h)
 				}
@@ -677,6 +740,102 @@ Describe 'AD-Privileged-Audit' {
 				@($objTypes['user']).Count | Should -Be $testData.users.Count
 				@($objTypes['computer']).Count | Should -Be $testData.computers.Count
 				@($objTypes['group']).Count | Should -Be $testData.groups.Count
+			}
+
+			Context 'ADPrivAADPasswordProtection' {
+				BeforeEach{
+					$ctx = Initialize-ADPrivReports
+					$ctx.params.passThru = $true
+
+					$dcs = $ctx.attribs.domainControllers = @{}
+					Initialize-ADPrivObjectCache $ctx
+					Get-ADGroupMemberSafe -Identity (Get-ADGroup 'Domain Controllers') -ctx $ctx | ForEach-Object{
+						$dcs[$_.entry.DistinguishedName] = $_.entry
+					}
+				}
+
+				It 'Test-ADPrivAADPasswordProtection' {
+					Test-ADPrivAADPasswordProtection -ctx $ctx
+					$aadppHosts = $ctx.reports['aadPasswordProtection'] | Group-Object -Property 'Name' -AsHashTable
+
+					$testDc1 = $aadppHosts['test-dc1'][0]
+					$testDc1.IsDC | Should -Be $true
+					$testDc1.IsAgent | Should -Be $true
+					$testDc1.IsProxy | Should -Be $false
+					$testDc1.AgentVersion | Should -Be '1.2.177.1'
+					$testDc1.AgentHeartbeat.ToUniversalTime() | Should -Be ([datetime]'2022-04-10T20:11:14.0595804Z').ToUniversalTime()
+					$testDc1.AgentPasswordPolicyDate.ToUniversalTime() | Should -Be ([datetime]'2022-04-10T20:10:12.3456789Z').ToUniversalTime()
+					$testDc1.ProxyVersion | Should -Be $null
+					$testDc1.ProxyHeartbeat | Should -Be $null
+					$testDc1.ProxyTenantName | Should -Be $null
+					$testDc1.ProxyTenantId | Should -Be $null
+
+					$testDc2 = $aadppHosts['test-dc2'][0]
+					$testDc2.IsDC | Should -Be $true
+					$testDc2.IsAgent | Should -Be $false
+					$testDc2.IsProxy | Should -Be $true
+					$testDc2.AgentVersion | Should -Be $null
+					$testDc2.AgentHeartbeat | Should -Be $null
+					$testDc2.AgentPasswordPolicyDate | Should -Be $null
+					$testDc2.ProxyVersion | Should -Be '1.2.125.0'
+					$testDc2.ProxyHeartbeat.ToUniversalTime() | Should -Be ([datetime]'2022-04-10T21:09:03.1205386Z').ToUniversalTime()
+					$testDc2.ProxyTenantName | Should -Be 'example.com'
+					$testDc2.ProxyTenantId | Should -Be '7264A389-D3C6-4993-87FB-35A7ED47EA98'
+
+					$testComp3 = $aadppHosts['testComp3'][0]
+					$testComp3.IsDC | Should -Be $false
+					$testComp3.IsAgent | Should -Be $false
+					$testComp3.IsProxy | Should -Be $true
+
+					$aadppHosts.Count | Should -Be 3
+
+					$warnings.Count | Should -Be 2
+					$warnings.Text | Should -Contain 'Unexpected DN searching for AzureADPasswordProtectionDCAgent: CN=Invalid,CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
+					$warnings.Text | Should -Contain 'Azure Active Directory (AAD) Password Protection: Not consistently deployed to every Domain Controller!'
+				}
+
+				It 'Test-ADPrivAADPasswordProtection-NoWarnings' {
+					$testReportsMockCtx.testData = New-ADPrivTestData
+					$testReportsMockCtx.testData.objects = $testReportsMockCtx.testData.objects `
+						| Where-Object {!$_.DistinguishedName.StartsWith('CN=Invalid,')}
+					$testDc2Agent = $testReportsMockCtx.testData.objectsByDn['CN=AzureADPasswordProtectionDCAgent,CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'] | ConvertTo-Json | ConvertFrom-Json
+					$testDc2Agent.DistinguishedName = 'CN=AzureADPasswordProtectionDCAgent,CN=test-dc2,OU=Domain Controllers,DC=example,DC=com'
+					$testReportsMockCtx.testData.objects += $testDc2Agent
+
+					Test-ADPrivAADPasswordProtection -ctx $ctx
+					$ctx.reports.Contains('aadPasswordProtection') | Should -Be $true
+					$warnings.Count | Should -Be 0
+				}
+
+				It 'Test-ADPrivAADPasswordProtection-NotDeployed' {
+					$testReportsMockCtx.testData = New-ADPrivTestData
+					$testReportsMockCtx.testData.objects = $testReportsMockCtx.testData.objects `
+						| Where-Object {$_.ObjectClass -ne 'serviceConnectionPoint'}
+
+					Test-ADPrivAADPasswordProtection -ctx $ctx
+					$ctx.reports.Contains('aadPasswordProtection') | Should -Be $false
+					$warnings.Text | Should -Contain 'Azure Active Directory (AAD) Password Protection: Not deployed.  (Does require AAD Premium licensing.)'
+				}
+
+				It 'Test-ADPrivAADPasswordProtection-NoProxies' {
+					$testReportsMockCtx.testData = New-ADPrivTestData
+					$testReportsMockCtx.testData.objects = $testReportsMockCtx.testData.objects `
+						| Where-Object {!$_.DistinguishedName.StartsWith('CN=AzureADPasswordProtectionProxy,')}
+
+					Test-ADPrivAADPasswordProtection -ctx $ctx
+					$ctx.reports.Contains('aadPasswordProtection') | Should -Be $true
+					$warnings.Text | Should -Contain 'Azure Active Directory (AAD) Password Protection: No proxies found!'
+				}
+
+				It 'Test-ADPrivAADPasswordProtection-OneProxy' {
+					$testReportsMockCtx.testData = New-ADPrivTestData
+					$testReportsMockCtx.testData.objects = $testReportsMockCtx.testData.objects `
+						| Where-Object {!$_.DistinguishedName.StartsWith('CN=AzureADPasswordProtectionProxy,CN=testComp3,')}
+
+					Test-ADPrivAADPasswordProtection -ctx $ctx
+					$ctx.reports.Contains('aadPasswordProtection') | Should -Be $true
+					$warnings.Text | Should -Contain 'Azure Active Directory (AAD) Password Protection: Only 1 proxy found for more than one Domain Controller.'
+				}
 			}
 
 			Context 'DataConditionals' {
@@ -699,7 +858,7 @@ Describe 'AD-Privileged-Audit' {
 				It 'Invoke-ADPrivReports-LapsOnDc' {
 					$testReportsMockCtx.lapsOnDc = $true
 					Invoke-ADPrivReports -ctx $ctx | Should -Be $null
-					$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc,OU=Domain Controllers,DC=example,DC=com'
+					$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
 				}
 
 				It 'Invoke-ADPrivReports-PassThru' {

@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-04-08
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-04-17
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-04-08'
+$version = '2022-04-17'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -467,7 +467,7 @@ function Get-ADGroupMemberSafe($identity, $ctx, $path){
 		| ForEach-Object{
 
 		$gm = Get-ADPrivObjectCache $_ 'object' $ctx
-		$oc = $gm.objectClass
+		$oc = $gm.ObjectClass
 
 		Write-Log ('    Member: gm={0}, oc={1}, group={2}' `
 				-f $gm, $oc, $group) `
@@ -550,6 +550,7 @@ function Initialize-ADPrivReports(){
 			passThru = $PassThru
 		}
 		attribs = @{
+			domainControllers = $null
 			rodcDate = $null
 		}
 		reports = [ordered]@{}
@@ -649,6 +650,8 @@ function Get-ADPrivGroup($identity){
 function Invoke-ADPrivGroups($ctx){
 	$groupsIn = New-ADPrivGroups -ctx $ctx
 	$groups = [System.Collections.ArrayList]::new($groupsIn.Count)
+	$dcs = $ctx.attribs.domainControllers = @{}
+	$dcSid = $groupsIn['Domain Controllers']
 	$rodcSid = $groupsIn['Read-Only Domain Controllers']
 
 	Initialize-ADPrivObjectCache $ctx
@@ -675,6 +678,11 @@ function Invoke-ADPrivGroups($ctx){
 
 			Get-ADGroupMemberSafe -identity $group -ctx $ctx | ForEach-Object{
 				$gm = $_
+
+				if($group.objectSid -eq $dcSid){
+					$dcs[$gm.entry.DistinguishedName] = $gm.entry
+				}
+
 				$x = [ordered]@{
 					GroupSid = $group.objectSid
 					GroupName = $group.Name
@@ -804,6 +812,126 @@ function Test-ADPrivSidHistory($ctx){
 			+ @(Get-ADGroup -Filter $filter -Properties $ctx.adProps.objectIn) `
 			| Sort-Object -Property 'Name' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.allOut
+	}
+}
+
+function Test-ADPrivAADPasswordProtection($ctx){
+	$ppStats = @{
+		numDCAgents = 0
+		numProxies = 0
+		numDCsMissingAgents = 0
+	}
+
+	$ppObjTemplate = @{
+		Computer = $null
+		IsDC = $false
+		IsAgent = $false
+		IsProxy = $false
+		AgentVersion = $null
+		AgentHeartbeat = $null
+		AgentPasswordPolicyDate = $null
+		ProxyVersion = $null
+		ProxyHeartbeat = $null
+		ProxyTenantName = $null
+		ProxyTenantId = $null
+	}
+
+	$ppObjs = @{}
+	$ctx.attribs.domainControllers.GetEnumerator() | ForEach-Object{
+		$x = $ppObjTemplate.Clone()
+		$x.Computer = $_.Value
+		$x.IsDC = $true
+		$ppObjs[$_.Name] = $x
+	}
+
+	function ConvertFrom-ADPrivAADPPMsdsSettings($s){
+		if($s.StartsWith('{')){
+			return $s | ConvertFrom-Json
+		}
+		$x = $s.Split('.')[1].Replace('-', '+').Replace('_', '/')
+		if($m = $x.Length % 4){
+			$x = $x + '=' * (4 - $m)
+		}
+		[text.encoding]::UTF8.GetString([convert]::FromBase64String($x)) `
+			| ConvertFrom-Json
+	}
+
+	function Invoke-ADPrivAADPPSCP($cn, $keyword, [scriptblock]$sb){
+		Get-ADObject -Filter "ObjectClass -eq 'serviceConnectionPoint' -and keywords -like '{$keyword}*'" -Properties 'msDS-Settings' | ForEach-Object{
+			Write-Log "${cn}: $($_.DistinguishedName)" -Severity DEBUG
+			$prefix = "CN=$cn,"
+			if($_.DistinguishedName.StartsWith($prefix)){
+				$compDn = $_.DistinguishedName.Substring($prefix.Length)
+
+				$ppObj = $ppObjs[$compDn]
+				if(!$ppObj){
+					$ppObj = $ppObjTemplate.Clone()
+					$ppObj.Computer = Get-ADComputer -Identity $compDn -Properties $ctx.adProps.compIn
+					$ppObjs[$compDn] = $ppObj
+				}
+
+				$ppMsds = ConvertFrom-ADPrivAADPPMsdsSettings $_.'msDS-Settings'
+
+				& $sb -ppObj $ppObj -ppMsds $ppMsds
+			}else{
+				Write-Log ('Unexpected DN searching for {0}: {1}' `
+						-f $cn, $_.DistinguishedName) `
+					-Severity WARN
+			}
+		}
+	}
+
+	Invoke-ADPrivAADPPSCP 'AzureADPasswordProtectionDCAgent' '2bac71e6-a293-4d5b-ba3b-50b995237946' {
+		param($ppObj, $ppMsds)
+		$ppObj.IsAgent = $true
+		$ppObj.AgentVersion = $ppMsds.SoftwareVersion
+		$ppObj.AgentHeartbeat = [datetime]$ppMsds.HeartbeatUTC
+		$ppObj.AgentPasswordPolicyDate = [datetime]$ppMsds.PasswordPolicyDateUTC
+		$ppStats.numDCAgents++
+	}
+	Invoke-ADPrivAADPPSCP 'AzureADPasswordProtectionProxy' 'ebefb703-6113-413d-9167-9f8dd4d24468' {
+		param($ppObj, $ppMsds)
+		$ppObj.IsProxy = $true
+		$ppObj.ProxyVersion = $ppMsds.SoftwareVersion
+		$ppObj.ProxyHeartbeat = [datetime]$ppMsds.HeartbeatUTC
+		$ppObj.ProxyTenantName = $ppMsds.TenantName
+		$ppObj.ProxyTenantId = $ppMsds.TenantId
+		$ppStats.numProxies++
+	}
+
+	foreach($ppObj in $ppObjs.Values){
+		if($ppObj.IsDC -and !$ppObj.IsAgent){
+			$ppStats.numDCsMissingAgents++
+		}
+	}
+
+	$logPrefix = 'Azure Active Directory (AAD) Password Protection: '
+	if(($ppStats.numDCAgents + $ppStats.numProxies) -eq 0){
+		Write-Log ($logPrefix + 'Not deployed.  (Does require AAD Premium licensing.)') -Severity WARN
+	}else{
+		if($ppStats.numDCAgents -ne $ctx.attribs.domainControllers.Count -or $ppStats.numDCsMissingAgents){
+			Write-Log ($logPrefix + 'Not consistently deployed to every Domain Controller!') -Severity WARN
+		}
+		if($ppStats.numProxies -eq 0){
+			Write-Log ($logPrefix + 'No proxies found!') -Severity WARN
+		}elseif($ppStats.numProxies -eq 1 -and $ctx.attribs.domainControllers.Count -gt 1){
+			Write-Log ($logPrefix + 'Only 1 proxy found for more than one Domain Controller.') -Severity WARN
+		}
+
+		New-ADPrivReport -ctx $ctx -name 'aadPasswordProtection' -title 'Azure Active Directory (AAD) Password Protection' -dataSource {
+			$ppObjs.Values | ForEach-Object{
+				$x = $_.Clone()
+				foreach($p in $_.Computer.PSObject.Properties.Name){
+					$x.$p = $_.Computer.$p
+				}
+				[PSCustomObject]$x
+			} | Sort-Object -Property 'Name' `
+				| ConvertTo-ADPrivRows -property (@(
+					'Name', 'IsDC', 'IsAgent', 'IsProxy'
+					'AgentVersion', 'AgentHeartbeat', 'AgentPasswordPolicyDate'
+					'ProxyVersion', 'ProxyHeartbeat', 'ProxyTenantName', 'ProxyTenantId'
+				) + ($ctx.adProps.compOut | Where-Object {$_ -ne 'Name'}))
+		}
 	}
 }
 
@@ -951,6 +1079,10 @@ function Invoke-ADPrivReports($ctx){
 	}else{
 		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
 	}
+
+	# Azure Active Directory (AAD) Password Protection
+
+	Test-ADPrivAADPasswordProtection -ctx $ctx
 
 	# Recycle Bin
 
