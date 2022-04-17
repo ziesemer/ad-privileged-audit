@@ -612,9 +612,10 @@ function Initialize-ADPrivReports(){
 }
 
 function New-ADPrivGroups($ctx){
+	# - https://docs.microsoft.com/en-us/windows/security/identity-protection/access-control/active-directory-security-groups
+	# 	- https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
 	# - https://docs.microsoft.com/en-us/windows-server/identity/ad-ds/plan/security-best-practices/appendix-b--privileged-accounts-and-groups-in-active-directory
 	# - https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/security-identifiers-in-windows
-	# - https://docs.microsoft.com/en-us/previous-versions/windows/it-pro/windows-server-2012-r2-and-2012/dn579255(v=ws.11)
 	$dsid = $ctx.params.domain.DomainSID.Value + '-'
 	$groupsIn = [ordered]@{
 		'Domain Admins' = $dsid + '512'
