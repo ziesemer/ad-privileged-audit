@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-04-17
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-06-04
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-04-17'
+$version = '2022-06-04'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -768,13 +768,14 @@ function Test-ADPrivStalePasswords($ctx, $filterDatePasswd){
 	}
 
 	$filterDatePasswdFt = $filterDatePasswd.ToFileTime()
+	$filterDatePasswdKrbtgtFt = $ctx.params.now.AddDays(-90).ToFileTime()
 	$outProps = Resolve-ADPrivProps 'user' -context 'stalePasswords' -generated
 	$rc4Count = 0
 
 	New-ADPrivReport -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords' -dataSource {
 		Get-ADUser `
 				-Filter (
-					"Enabled -eq `$true -and (pwdLastSet -lt $filterDatePasswdFt)"
+					"(Enabled -eq `$true -and pwdLastSet -lt $filterDatePasswdFt) -or ((sAMAccountName -eq 'krbtgt' -or sAMAccountName -like 'krbtgt_*') -and pwdLastSet -lt $filterDatePasswdKrbtgtFt)"
 				) `
 				-Properties $ctx.adProps.userIn `
 			| Sort-Object -Property 'PasswordLastSet', 'whenCreated' `

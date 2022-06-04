@@ -512,8 +512,38 @@ Describe 'AD-Privileged-Audit' {
 							PasswordLastSet = [DateTime]::FromFileTime(0)
 							whenCreated = $testReportsMockCtx.oldPasswordDate
 						}
+						@{
+							Name = 'krbtgt'
+							Enabled = $false
+							DistinguishedName = 'CN=krbtgt,OU=Users,DC=example,DC=com'
+							PasswordLastSet = $testReportsMockCtx.createDate
+							whenCreated = $testReportsMockCtx.createDate
+						}
+						@{
+							Name = 'krbtgt_1234'
+							Enabled = $false
+							DistinguishedName = 'CN=krbtgt_1234,OU=Users,DC=example,DC=com'
+							PasswordLastSet = $testReportsMockCtx.oldPasswordDate
+							whenCreated = $testReportsMockCtx.oldPasswordDate
+						}
+						@{
+							Name = 'krbtgt_2345'
+							Enabled = $false
+							DistinguishedName = 'CN=krbtgt_2345,OU=Users,DC=example,DC=com'
+							PasswordLastSet = Get-Date
+							whenCreated = $testReportsMockCtx.oldPasswordDate
+						}
+						@{
+							Name = 'TestOldDisabled'
+							Enabled = $false
+							DistinguishedName = 'CN=TestOldDisabled,OU=Users,DC=example,DC=com'
+							PasswordLastSet = $testReportsMockCtx.createDate
+							whenCreated = $testReportsMockCtx.createDate
+						}
 					) | ForEach-Object{
-						$_.Enabled = $true
+						if(!$_.ContainsKey('Enabled')){
+							$_.Enabled = $true
+						}
 						$_.lastLogonTimestamp = $testReportsMockCtx.createDate.ToFileTime()
 						$_.PasswordNotRequired = $false
 						$_.sAMAccountName = $_.Name
@@ -744,6 +774,11 @@ Describe 'AD-Privileged-Audit' {
 				Reset-TestReportsMockCtx
 			}
 
+			It 'TestData-krbtgt-Disabled' {
+				$testData = New-ADPrivTestData
+				$testData.usersByDn['CN=krbtgt,OU=Users,DC=example,DC=com'][0].Enabled | Should -Be $false
+			}
+
 			It 'Default-Full' {
 				$noFiles = $false
 				$noFiles | Should -Be $false
@@ -966,7 +1001,7 @@ Describe 'AD-Privileged-Audit' {
 					$results | Should -BeOfType [PSCustomObject]
 				}
 
-				Context 'RC4-Passwords' {
+				Context 'Stale-Passwords' {
 					BeforeAll{
 						$stalePasswords = @{}
 						foreach($p in $results.reports['stalePasswords']){
@@ -977,8 +1012,26 @@ Describe 'AD-Privileged-Audit' {
 						$testWarnings | Should -Not -Be $null
 					}
 
+					It 'krbtgt' {
+						$stalePasswords.Keys | Should -Contain 'krbtgt'
+					}
+
+					It 'krbtgt_1234' {
+						$stalePasswords.Keys | Should -Contain 'krbtgt_1234'
+					}
+
+					It 'krbtgt_2345' {
+						$testReportsMockCtx.testData.usersByDn.Keys | Should -Contain 'CN=krbtgt_2345,OU=Users,DC=example,DC=com'
+						$stalePasswords.Keys | Should -Not -Contain 'krbtgt_2345'
+					}
+
+					It 'TestOldDisabled' {
+						$testReportsMockCtx.testData.usersByDn.Keys | Should -Contain 'CN=TestoldDisabled,OU=Users,DC=example,DC=com'
+						$stalePasswords.Keys | Should -Not -Contain 'TestOldDisabled'
+					}
+
 					It 'RC4-Warnings' {
-						$testWarnings.Text | Should -Contain 'stalePasswords: 2 passwords are most likely using insecure RC4 secret keys.'
+						$testWarnings.Text | Should -Contain 'stalePasswords: 3 passwords are most likely using insecure RC4 secret keys.'
 					}
 
 					It 'RC4-Passwords-Administrator' {

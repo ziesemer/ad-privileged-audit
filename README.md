@@ -82,8 +82,11 @@ Current reports include:
 	2. Note that this report does not (yet) account for accounts that are logging-in to only Azure Active Directory (AAD).  As such, exercise caution against disabling or deleting accounts listed here that may be synchronized to AAD without checking for use in AAD first.
 4. Stale Passwords (`stalePasswords`).
 	1. Users with passwords older than 365 days (1 year).
-	2. A stale password is a stale password, regardless of if the account is being used in AD and/or AAD (unlike with Stale Users, above).
-	3. This report will also identify as a dedicated column (`RC4`) if any account is determined to use even older / insecure RC4 secret keys instead or AES.
+	2. Includes Kerberos Ticket Granting Ticket (`krbtgt`) accounts older than 90 days (~3 months).
+		1. References:
+			1. <https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/faqs-from-the-field-on-krbtgt-reset/ba-p/2367838>
+	3. A stale password is a stale password, regardless of if the account is being used in AD and/or AAD (unlike with Stale Users, above).
+	4. This report will also identify as a dedicated column (`RC4`) if any account is determined to use even older / insecure RC4 secret keys instead or AES.
 		1. This is based on a PasswordLastSet date being older than a domain functional level upgrade to 2008, as determined by the creation date of the "Read-Only Domain Controllers" (RODC) security group.
 		2. If the creation date of the RODC group happens to be more recent than the default search (365 days), the date threshold of the search will be automatically adjusted to match to ensure any such accounts are included in the report.
 		3. References:
