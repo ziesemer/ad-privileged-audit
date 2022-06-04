@@ -210,6 +210,16 @@ Describe 'AD-Privileged-Audit' {
 				$fileItem.LastWriteTime | Should -BeGreaterOrEqual $ctx.params.now
 				if($data){
 					@(Import-Csv -Path $file).Count | Should -Be 1
+
+					# Confirm UTF-8 format by checking for byte order mark (BOM).
+					$buffer = [byte[]]::new(3)
+					$stream = [System.IO.File]::OpenRead($file)
+					try{
+						[void]$stream.Read($buffer, 0, 3)
+					}finally{
+						$stream.Close()
+					}
+					$buffer | Should -Be 0xEF,0xBB,0xBF
 				}else{
 					$fileItem.Length | Should -Be 0
 				}

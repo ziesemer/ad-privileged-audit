@@ -234,7 +234,7 @@ function Out-ADPrivReports{
 		$path = ($ctx.params.filePattern -f ('-' + $name)) + '.csv'
 		if($results){
 			if(!$ctx.params.noFiles){
-				$results | Export-Csv -NoTypeInformation -Path $path
+				$results | Export-Csv -NoTypeInformation -Path $path -Encoding $ctx.params.fileEncoding
 				$ctx.reportFiles[$name] = $path
 			}
 			if($ctx.params.interactive){
@@ -548,6 +548,7 @@ function Initialize-ADPrivReports(){
 			noFiles = $noFiles
 			noZip = $noZip
 			passThru = $PassThru
+			fileEncoding = "UTF8"
 		}
 		attribs = @{
 			domainControllers = $null
@@ -581,6 +582,10 @@ function Initialize-ADPrivReports(){
 	$filterDatePassword = $ctx.params.filterDatePassword = $now.AddDays(-365)
 	Write-Log ('$filterDatePassword: {0}' -f $filterDatePassword)
 
+	if($PSVersionTable.PSVersion.Major -ge 6){
+		$ctx.params.fileEncoding = 'utf8BOM'
+	}
+
 	$domain = $ctx.params.domain = Get-ADDomain
 
 	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
@@ -602,7 +607,7 @@ function Initialize-ADPrivReports(){
 		Write-Log 'Writing parameters JSON file...'
 
 		$paramsJsonPath = $filePattern -f '-params' + '.json'
-		$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force
+		$ctx.params | ConvertTo-Json | Out-File $paramsJsonPath -Force -Encoding $ctx.params.fileEncoding
 		$ctx.reportFiles['params'] = $paramsJsonPath
 	}
 
