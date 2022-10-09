@@ -31,7 +31,7 @@ There are multiple methods and options for executing this script depending upon 
 2. Remote Desktop (RDP) to a DC, [referencing requirements below](#dependencies).
 3. Copy the script to the Desktop of the DC.  (Should be able to just copy & paste through the RDP session.)
 4. Right-click the script from the Desktop of the DC, then click "Run with PowerShell".
-5. Reports will be provided directly to the screen (using PowerShell's [`Out-GridView`](https://docs.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/out-gridview)), as well as to dated files in an `AD-Reports` folder that will be created on the Desktop (if it does not already exist).
+5. Reports will be provided directly to the screen (using PowerShell's [`Out-GridView`](https://learn.microsoft.com/en-us/powershell/module/microsoft.powershell.utility/out-gridview)), as well as to dated files in an `AD-Reports` folder that will be created on the Desktop (if it does not already exist).
 6. The displayed grids can be minimized or closed one-at-a-time as they are reviewed.  Completing the "Press Enter to continue..." prompt in or closing the main PowerShell window will close any remaining windows.
 
 The script will attempt to self-elevate when run.  It will also attempt to resolve mapped drive letters to UNC paths that might otherwise not exist once in the elevated context.  However, there are other complexities that may exist in some environments that are not accounted for here - and the best way to ensure that the script executes is to simply run it from the Desktop, or at least elsewhere on a local drive.
@@ -42,15 +42,23 @@ Command-line arguments are typically not required.  For now, available options c
 
 ## Dependencies
 
-1. [PowerShell](https://docs.microsoft.com/en-us/powershell/) - version 5.1 or later.
+1. [PowerShell](https://learn.microsoft.com/en-us/powershell/) - version 5.1 or later.
 	1. Version 5.1 is available by default on Windows 10 since version 1607, and on Windows Server 2016 or higher.
-	2. Windows Server 2012 (including R2) require the Windows Management Framework (WMF) 5.1: <https://docs.microsoft.com/en-us/powershell/scripting/windows-powershell/wmf/setup/install-configure>
-		1. PowerShell is only required where the script is being run _from_, and not required on the Domain Controller(s) being queried - unless being run from a DC itself.
+	2. Windows Server 2012 (including R2) require the Windows Management Framework (WMF) 5.1: <https://learn.microsoft.com/en-us/powershell/scripting/windows-powershell/wmf/setup/install-configure>
+		1. A restart **is** required after installation, before a PowerShell 5.1 script will successfully execute.
+		2. PowerShell is only required where the script is being run _from_, and not required on the Domain Controller(s) being queried - unless being run from a DC itself.
 	3. Windows Server 2008 (including R2) and older servers are not tested or supported.
 		1. These operating systems are over 10 years old, no longer supported by Microsoft, and should no longer be used.
-2. The `ActiveDirectory` PowerShell module installed and available.
+2. [Microsoft .Net Framework](https://learn.microsoft.com/en-us/dotnet/framework/install/) - version 4.7 or later.
+	1. This is included by default in Windows Server 2019 or newer.
+	2. A restart **is** required after installation, before .Net 4.7+ classes will be recognized by a PowerShell script.
+	3. For reference - on Server 2012, "Microsoft .NET Framework 4.8 for Windows Server 2012 R2 for x64 ([KB4486105](https://www.catalog.update.microsoft.com/Search.aspx?q=KB4486105))" has been listed as an available (but optional) Windows Update since 2020-01-14.
+	4. Older versions (including 4.5) are in End of Support status by Microsoft, and should no longer be used.
+		1. <https://learn.microsoft.com/en-us/lifecycle/products/microsoft-net-framework>
+		2. <https://aka.ms/framework-452-46-461-eos-blog>
+3. The `ActiveDirectory` PowerShell module installed and available.
 	1. Windows Server: `Install-WindowsFeature RSAT-AD-PowerShell`
-3. Execution as a member of "Domain Admins".
+4. Execution as a member of "Domain Admins".
 	1. Though it is possible to run with lesser privileges, many of the reports may be inaccurate or incomplete, due to not being able to read attributes with restricted security.
 
 ## Reports
@@ -92,7 +100,7 @@ Current reports include:
 		3. References:
 			1. <https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/decrypting-the-selection-of-supported-kerberos-encryption-types/ba-p/1628797>
 5. Password Not Required (`passwordNotRequired`).
-	1. Interdomain trust accounts - where the UserAccountControl is 0x820 (2080) - can be safely ignored here as long as the account is recognized as part of a current and valid domain trust.  See <https://docs.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties> for details of these values.  Exclusions for this may be added in the future with some further considerations around this.
+	1. Interdomain trust accounts - where the UserAccountControl is 0x820 (2080) - can be safely ignored here as long as the account is recognized as part of a current and valid domain trust.  See <https://learn.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties> for details of these values.  Exclusions for this may be added in the future with some further considerations around this.
 6. SID History (`sidHistory`).
 7. Stale Computers (`staleComputers`), based on [lastLoginTimestamp](#lastlogintimestamp).
 	1. Computers that haven't logged-in within 90 days (~3 months).
@@ -103,14 +111,14 @@ Current reports include:
 11. Computers with current [LAPS](#laps) (`lapsIn`).
 	1. This report is the inverse of `lapsOut` - and opposite of all the others in that a higher result count here is better.
 12. Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`).
-	1. Details any usage of Azure Active Directory (AAD) Password Protection, as detailed at <https://docs.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad-on-premises>.
+	1. Details any usage of Azure Active Directory (AAD) Password Protection, as detailed at <https://learn.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad-on-premises>.
 		1. This report details any servers that are a Domain Controller, running the DC agent, and/or running the proxy service.
 		2. Any agent/proxy version and heartbeat timestamp, agent password policy date, and proxy tenant name and ID are reported for each.
-			1. Current version numbers may be referenced from the solution's [Agent version history](https://docs.microsoft.com/en-us/azure/active-directory/authentication/howto-password-ban-bad-on-premises-agent-versions) page.
-		3. These details are similar to what is provided the `Get-AzureADPasswordProtectionDCAgent` and `Get-AzureADPasswordProtectionProxy` cmdlets as provided by the AzureADPasswordProtection PowerShell module that are installed on the proxy servers - but directly reference the details stored in Active Directory, and without needing to connect to any proxy server or otherwise having the PowerShell module installed local to the execution of this script.  As detailed at the solution's [Monitor](https://docs.microsoft.com/en-us/azure/active-directory/authentication/howto-password-ban-bad-on-premises-monitor) page, these details should typically be updated on an hourly basis, and are still subject to Active Directory's replication latency.
+			1. Current version numbers may be referenced from the solution's [Agent version history](https://learn.microsoft.com/en-us/azure/active-directory/authentication/howto-password-ban-bad-on-premises-agent-versions) page.
+		3. These details are similar to what is provided the `Get-AzureADPasswordProtectionDCAgent` and `Get-AzureADPasswordProtectionProxy` cmdlets as provided by the AzureADPasswordProtection PowerShell module that are installed on the proxy servers - but directly reference the details stored in Active Directory, and without needing to connect to any proxy server or otherwise having the PowerShell module installed local to the execution of this script.  As detailed at the solution's [Monitor](https://learn.microsoft.com/en-us/azure/active-directory/authentication/howto-password-ban-bad-on-premises-monitor) page, these details should typically be updated on an hourly basis, and are still subject to Active Directory's replication latency.
 	2. Warnings will be logged for any of the following:
 		1. If the AAD Password Protection solution is not deployed.
-			1. This includes a reminder that [AAD Premium licensing is required](https://docs.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad#license-requirements) to utilize this feature.
+			1. This includes a reminder that [AAD Premium licensing is required](https://learn.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad#license-requirements) to utilize this feature.
 		2. If the DC agent is not consistently deployed to every Domain Controller.
 		3. If no proxies are found.
 		4. If only 1 proxy is found for more than one Domain Controller.
@@ -156,7 +164,7 @@ Currently, this script only consults the `lastLogonTimestamp` attribute.  Unlike
 See also:
 
 * <https://techcommunity.microsoft.com/t5/ask-the-directory-services-team/8220-the-lastlogontimestamp-attribute-8221-8211-8220-what-it-was/ba-p/396204>
-* <https://docs.microsoft.com/en-us/windows/win32/adschema/a-lastlogontimestamp>
+* <https://learn.microsoft.com/en-us/windows/win32/adschema/a-lastlogontimestamp>
 * <https://social.technet.microsoft.com/wiki/contents/articles/22461.understanding-the-ad-account-attributes-lastlogon-lastlogontimestamp-and-lastlogondate.aspx>
 
 ### Enabled vs. Disabled Accounts
