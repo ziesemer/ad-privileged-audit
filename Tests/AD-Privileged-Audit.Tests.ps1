@@ -163,7 +163,36 @@ Describe 'AD-Privileged-Audit' {
 			$groupsIn | Should -Not -BeNullOrEmpty
 		}
 
-		Context 'Invoke-ADPrivReportHistory-LAPS'{
+		Context 'Invoke-ADPrivReportHistory'{
+			It 'Invoke-ADPrivReportHistory-RowCountCache' {
+				$noFiles = $false
+				$noFiles | Should -Be $false
+				$reportsFolder = Join-Path $reportsFolder 'RowCountCache'
+				if(Test-Path $reportsFolder -PathType Container){
+					Get-ChildItem $reportsFolder -File | Remove-Item
+				}
+				$ctx = Initialize-ADPrivReports
+				$ctx.params.passThru = $true
+
+				$rptHistRowCountCacheCsv = Join-Path $reportsFolder 'test.example.com-reportHistory-RowCountCache.csv'
+				Test-Path $rptHistRowCountCacheCsv -PathType Leaf | Should -Be $false
+
+				foreach($simRowCount in 3,5){
+					1..$simRowCount | ForEach-Object{
+						[PSCustomObject][ordered]@{
+							Row = $_
+							Value = "Abc$_"
+						}
+					} | Export-Csv -Path (Join-Path $reportsFolder 'test.example.com-test-2022-12-11.csv') -NoTypeInformation
+
+					Invoke-ADPrivReportHistory -ctx $ctx
+					Test-Path $rptHistRowCountCacheCsv -PathType Leaf | Should -Be $true
+
+					# Should remain at 3, as 5 would mean the file was re-read instead of referencing the existing and valid cache as expected.
+					$ctx.reports['reportHistory'][0].RowCount | Should -Be 3
+				}
+			}
+
 			It 'Invoke-ADPrivReportHistory-LAPS-Rename' {
 				$noFiles = $false
 				$noFiles | Should -Be $false
@@ -179,6 +208,7 @@ Describe 'AD-Privileged-Audit' {
 
 				Test-Path (Join-Path $reportsFolder 'test.example.com-lapsIn-2022-01-08.csv') -PathType Leaf | Should -Be $true
 			}
+
 			It 'Invoke-ADPrivReportHistory-LAPS-NoReports' {
 				$reportsFolder = Join-Path $reportsFolder 'LAPS-NoReports'
 				Test-Path $reportsFolder | Should -Be $false

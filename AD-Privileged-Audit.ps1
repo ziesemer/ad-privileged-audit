@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-06-04
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-12-11
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-06-04'
+$version = '2022-12-11'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -738,10 +738,24 @@ function Invoke-ADPrivReportHistory($ctx){
 			}
 		}
 
+		$rowCounts = @{}
+		$rptHistRowCountCacheCsv = Join-Path $ctx.params.reportsFolder "$($ctx.params.domain.DNSRoot)-reportHistory-RowCountCache.csv"
+		if(Test-Path $rptHistRowCountCacheCsv -PathType Leaf){
+			Import-Csv -Path $rptHistRowCountCacheCsv | ForEach-Object{
+				$rowCounts[$_.CsvFile] = $_.RowCount
+			}
+		}else{
+			Write-Log '  No row count cache found.'
+		}
+
 		$reportNamePattern = [regex]::new('(.*)-(.*)-(\d{4}-\d{2}-\d{2})(?:-(initial))?\.csv')
-		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*.csv') -Exclude '*-reportHistory-*' | ForEach-Object{
+		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*.csv') -Exclude '*-reportHistory-*' | ForEach-Object -Process {
 			$csvFile = $_
-			$rowCount = (Import-Csv -Path $csvFile | Measure-Object).Count
+			$rowCount = $rowCounts[$csvFile.Name]
+			if($null -eq $rowCount){
+				$rowCount = (Import-Csv -Path $csvFile | Measure-Object).Count
+				$rowCounts[$csvFile.Name] = $rowCount
+			}
 			$result = [PSCustomObject][ordered]@{
 				'CsvFile' = $csvFile.Name
 				'Domain' = $null
@@ -760,6 +774,13 @@ function Invoke-ADPrivReportHistory($ctx){
 			}
 
 			$result
+		} -End{
+			$rowCounts.GetEnumerator() | Sort-Object -Property Key | ForEach-Object{
+				[PSCustomObject][ordered]@{
+					CsvFile = $_.Key
+					RowCount = $_.Value
+				}
+			} | Export-Csv -NoTypeInformation -Path $rptHistRowCountCacheCsv -Encoding $ctx.params.fileEncoding
 		} | Sort-Object -Property 'Domain', 'Report', 'Date', 'DateSuffix', 'CsvFile' `
 			| ConvertTo-ADPrivRows
 	}
