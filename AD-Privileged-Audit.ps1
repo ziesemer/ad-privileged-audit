@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-12-11
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-12-12
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-12-11'
+$version = '2022-12-12'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -742,7 +742,7 @@ function Invoke-ADPrivReportHistory($ctx){
 		$rptHistRowCountCacheCsv = Join-Path $ctx.params.reportsFolder "$($ctx.params.domain.DNSRoot)-reportHistory-RowCountCache.csv"
 		if(Test-Path $rptHistRowCountCacheCsv -PathType Leaf){
 			Import-Csv -Path $rptHistRowCountCacheCsv | ForEach-Object{
-				$rowCounts[$_.CsvFile] = $_.RowCount
+				$rowCounts[$_.CsvFile] = [int]$_.RowCount
 			}
 		}else{
 			Write-Log '  No row count cache found.'
