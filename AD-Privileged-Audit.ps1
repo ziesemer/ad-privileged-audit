@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-12-12
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-12-26
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-12-12'
+$version = '2022-12-26'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -163,7 +163,8 @@ function ConvertTo-ADPrivRows{
 		[Parameter(Mandatory, ValueFromPipeline)]
 		[PSCustomObject]$row,
 		[Object[]]$property,
-		[System.Collections.Generic.HashSet[string]]$dateProps = 'lastLogonTimestamp'
+		[System.Collections.Generic.HashSet[string]]$dateProps = 'lastLogonTimestamp',
+		[scriptblock]$scriptBlock
 	)
 
 	Begin{
@@ -191,6 +192,9 @@ function ConvertTo-ADPrivRows{
 			}else{
 				$out.$p = $row.$p
 			}
+		}
+		if($scriptBlock){
+			$scriptBlock.Invoke($out)
 		}
 		# The Select-Object here must be called only after the the object is re-created above,
 		#   including null properties for the columns requested,
@@ -963,6 +967,85 @@ function Test-ADPrivAADPasswordProtection($ctx){
 	}
 }
 
+function Test-ADPrivLaps($ctx){
+	$admPwdAttrs = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext `
+		-Filter "name -eq 'ms-Mcs-AdmPwd' -or name -eq 'ms-Mcs-AdmPwdExpirationTime'" `
+		-Properties SchemaIDGUID | Group-Object -AsHashTable -Property 'Name'
+	$admPwdAttr = $null
+	if($admPwdAttrs){
+		$admPwdAttr = $admPwdAttrs['ms-Mcs-AdmPwd'] | Select-Object
+		$admPwdExpAttr = $admPwdAttrs['ms-Mcs-AdmPwdExpirationTime'] | Select-Object
+	}
+	if($admPwdAttr){
+		$now = $ctx.params.now.ToFileTime()
+
+		function Invoke-LAPSReport([string]$adFilter, [scriptblock]$whereFilter, $extraProps, [scriptblock]$convertScriptBlock){
+			if(!$whereFilter){
+				$whereFilter = {$true}
+			}
+			if(!$extraProps){
+				$extraProps = @()
+			}
+			Get-ADComputer -Filter $adFilter `
+					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
+				| Where-Object $whereFilter `
+				| Sort-Object -Property 'ms-Mcs-AdmPwdExpirationTime', 'lastLogonTimestamp' `
+				| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $extraProps + $ctx.adProps.compOut) `
+					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime' `
+					-scriptBlock $convertScriptBlock
+		}
+
+		$admPwdAttrGuid = [guid]$admPwdAttr.SchemaIDGUID
+		$admPwdExpAttrGuid = [guid]$admPwdExpAttr.SchemaIDGUID
+
+		New-ADPrivReport -ctx $ctx -name 'lapsOut' -title 'Computers without LAPS or expired.' -dataSource {
+			Invoke-LAPSReport `
+				-adFilter "Enabled -eq `$true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')" `
+				-whereFilter {
+					-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
+				} `
+				-extraProps 'ACL-Inherited', 'ACL-Self-Pwd-W', 'ACL-Self-PwdExp-RW' `
+				-convertScriptBlock {
+					param($row)
+					$acl = Get-Acl -Path "AD:$($row.DistinguishedName)"
+					$row.'ACL-Inherited' = !$acl.AreAccessRulesProtected
+					$row.'ACL-Self-Pwd-W' = $false
+					$row.'ACL-Self-PwdExp-RW' = $false
+					$acl.Access | Where-Object {$_.IdentityReference -eq 'NT AUTHORITY\SELF' -and $_.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow} | ForEach-Object{
+						if($_.ObjectType -eq $admPwdAttrGuid){
+							if($_.ActiveDirectoryRights -band [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty){
+								$row.'ACL-Self-Pwd-W' = $true
+							}
+						}elseif($_.ObjectType -eq $admPwdExpAttrGuid){
+							if($_.ActiveDirectoryRights -band ([System.DirectoryServices.ActiveDirectoryRights]::ReadProperty -bor [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty)){
+								$row.'ACL-Self-PwdExp-RW' = $true
+							}
+						}
+					}
+				}
+		}
+		New-ADPrivReport -ctx $ctx -name 'lapsIn' -title 'Computers with current LAPS.' -dataSource {
+			Invoke-LAPSReport `
+				"Enabled -eq `$true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
+		}
+
+		@(Get-ADComputer -Filter `
+			("Enabled -eq `$true" `
+				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')" `
+				+ ' -and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)')
+		) + @(Get-ADComputer -Filter `
+			("Enabled -eq `$true" `
+				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')") `
+			-SearchBase $ctx.params.domain.DomainControllersContainer
+		) | Sort-Object -Unique DistinguishedName `
+			| ForEach-Object{
+				Write-Log "LAPS found on possible domain controller: $($_.DistinguishedName)" -Severity WARN
+			}
+	}else{
+		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
+	}
+}
+
 function Test-ADPrivRecycleBin($ctx){
 	$recycleBinEnabledScopes = (Get-ADOptionalFeature -Filter "Name -eq 'Recycle Bin Feature'").EnabledScopes
 	if($recycleBinEnabledScopes){
@@ -1064,49 +1147,7 @@ function Invoke-ADPrivReports($ctx){
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 
-	$admPwdAttr = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext -Filter "name -eq 'ms-Mcs-AdmPwd'"
-	if($admPwdAttr){
-		$now = $ctx.params.now.ToFileTime()
-
-		function Invoke-LAPSReport([string]$adFilter, [scriptblock]$whereFilter){
-			if(!$whereFilter){
-				$whereFilter = {$true}
-			}
-			Get-ADComputer -Filter $adFilter `
-					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
-				| Where-Object $whereFilter `
-				| Sort-Object -Property 'ms-Mcs-AdmPwdExpirationTime', 'lastLogonTimestamp' `
-				| ConvertTo-ADPrivRows -property (@('ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime') + $ctx.adProps.compOut) `
-					-dateProps 'lastLogonTimestamp', 'ms-Mcs-AdmPwdExpirationTime'
-		}
-
-		New-ADPrivReport -ctx $ctx -name 'lapsOut' -title 'Computers without LAPS or expired.' -dataSource {
-			Invoke-LAPSReport `
-				-adFilter "Enabled -eq `$true -and (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')" `
-				-whereFilter {
-					-not ($_.DistinguishedName -eq ('CN=' + $_.Name + ',' + $ctx.params.domain.DomainControllersContainer) -and $_.PrimaryGroupID -in (516, 498, 521))
-				}
-		}
-		New-ADPrivReport -ctx $ctx -name 'lapsIn' -title 'Computers with current LAPS.' -dataSource {
-			Invoke-LAPSReport `
-				"Enabled -eq `$true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
-		}
-
-		@(Get-ADComputer -Filter `
-			("Enabled -eq `$true" `
-				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')" `
-				+ ' -and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)')
-		) + @(Get-ADComputer -Filter `
-			("Enabled -eq `$true" `
-				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')") `
-			-SearchBase $ctx.params.domain.DomainControllersContainer
-		) | Sort-Object -Unique DistinguishedName `
-			| ForEach-Object{
-				Write-Log "LAPS found on possible domain controller: $($_.DistinguishedName)" -Severity WARN
-			}
-	}else{
-		Write-Log 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)' -Severity WARN
-	}
+	Test-ADPrivLaps -ctx $ctx
 
 	# Azure Active Directory (AAD) Password Protection
 

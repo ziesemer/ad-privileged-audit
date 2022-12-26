@@ -108,6 +108,10 @@ Current reports include:
 9. Future lastLoginTimestamps (`futureLastLogins`).
 	1. May appear in hopefully rare cases where the system time on one or more Domain Controllers was set into the future.  There are currently not any known great fixes for this, but such a state shown be made aware of - as impacted objects will maintain their incorrect lastLoginTimestamps and not be updated to current (past) dates.
 10. Computers without [LAPS](#laps) or expired (`lapsOut`).
+	1. One common cause of failed LAPS deployments to various computers is due to missing or improper AD Access Control Lists (ACLs).  A typical LAPS deployment involves using `Set-AdmPwdComputerSelfPermission` to set permissions on one or more Organizational Units (OUs), giving computers contained within the rights needed to read and write the LAPS attributes (`ms-Mcs-AdmPwd` and `ms-Mcs-AdmPwdExpirationTime`) on their own computer objects (SELF) in AD.  These columns are calculated for only this report, where they may assist with troubleshooting of failed LAPS deployments to various computers:
+		1. `ACL-Inherited`: Should be `True` to indicate that the computer is appropriately inheriting permissions from its parent OU.
+		2. `ACL-Self-Pwd-W`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting the `WriteProperty` right to its own `ms-Mcs-AdmPwd` attribute.
+		3. `ACL-Self-PwdExp-RW`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting both the `ReadProperty` and `WriteProperty` rights to its own `ms-Mcs-AdmPwdExpirationTime` attribute.
 11. Computers with current [LAPS](#laps) (`lapsIn`).
 	1. This report is the inverse of `lapsOut` - and opposite of all the others in that a higher result count here is better.
 12. Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`).
