@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2022-12-26
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-08-05
 # SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2022-12-26'
+$version = '2023-08-05'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -236,6 +236,8 @@ function Out-ADPrivReports{
 			$ctx.reports.$name = $results
 		}
 		$path = ($ctx.params.filePattern -f ('-' + $name)) + '.csv'
+		$pathName = Split-Path -Path $path -Leaf
+		$ctx.reportRowCounts[$pathName] = $results.Count
 		if($results){
 			if(!$ctx.params.noFiles){
 				$results | Export-Csv -NoTypeInformation -Path $path -Encoding $ctx.params.fileEncoding
@@ -560,6 +562,7 @@ function Initialize-ADPrivReports(){
 		}
 		reports = [ordered]@{}
 		reportFiles = [ordered]@{}
+		reportRowCounts = @{}
 		adProps = [ordered]@{}
 	}
 
@@ -743,6 +746,8 @@ function Invoke-ADPrivReportHistory($ctx){
 		}
 
 		$rowCounts = @{}
+
+		# Read prior counts from cache.
 		$rptHistRowCountCacheCsv = Join-Path $ctx.params.reportsFolder "$($ctx.params.domain.DNSRoot)-reportHistory-RowCountCache.csv"
 		if(Test-Path $rptHistRowCountCacheCsv -PathType Leaf){
 			Import-Csv -Path $rptHistRowCountCacheCsv | ForEach-Object{
@@ -752,11 +757,17 @@ function Invoke-ADPrivReportHistory($ctx){
 			Write-Log '  No row count cache found.'
 		}
 
+		# Update with any values from this report run.
+		foreach($rc in $ctx.reportRowCounts.GetEnumerator()){
+			$rowCounts[$rc.Key] = $rc.Value
+		}
+
 		$reportNamePattern = [regex]::new('(.*)-(.*)-(\d{4}-\d{2}-\d{2})(?:-(initial))?\.csv')
 		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*.csv') -Exclude '*-reportHistory-*' | ForEach-Object -Process {
 			$csvFile = $_
 			$rowCount = $rowCounts[$csvFile.Name]
 			if($null -eq $rowCount){
+				# If the row count result still does not exist, then actually read the number of rows from the CSV file.
 				$rowCount = (Import-Csv -Path $csvFile | Measure-Object).Count
 				$rowCounts[$csvFile.Name] = $rowCount
 			}

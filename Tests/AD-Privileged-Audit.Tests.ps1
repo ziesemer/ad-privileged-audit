@@ -1,5 +1,5 @@
 ﻿# Mark A. Ziesemer, www.ziesemer.com
-# SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
+# SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
 
 #Requires -Version 5.1
 #Requires -Modules @{ModuleName='Pester'; ModuleVersion='5.3.1'}
@@ -174,6 +174,7 @@ Describe 'AD-Privileged-Audit' {
 				}
 				$ctx = Initialize-ADPrivReports
 				$ctx.params.passThru = $true
+				$ctx.reports.Count | Should -Be 0
 
 				$rptHistRowCountCacheCsv = Join-Path $reportsFolder 'test.example.com-reportHistory-RowCountCache.csv'
 				Test-Path $rptHistRowCountCacheCsv -PathType Leaf | Should -Be $false
@@ -184,14 +185,22 @@ Describe 'AD-Privileged-Audit' {
 							Row = $_
 							Value = "Abc$_"
 						}
-					} | Export-Csv -Path (Join-Path $reportsFolder 'test.example.com-test-2022-12-11.csv') -NoTypeInformation
+					} | Out-ADPrivReports -ctx $ctx -name 'test' -title 'Test'
 
 					Invoke-ADPrivReportHistory -ctx $ctx
 					Test-Path $rptHistRowCountCacheCsv -PathType Leaf | Should -Be $true
 
-					# Should remain at 3, as 5 would mean the file was re-read instead of referencing the existing and valid cache as expected.
-					$ctx.reports['reportHistory'][0].RowCount | Should -Be 3
+					$ctx.reports['reportHistory'][0].RowCount | Should -Be $simRowCount
 				}
+
+				$ctx.reports.Count | Should -Be 2
+				$ctx.reports['reportHistory'].Count | Should -Be 1
+
+				$ctx = Initialize-ADPrivReports
+				$ctx.params.passThru = $true
+				$ctx.reports.Count | Should -Be 0
+				Invoke-ADPrivReportHistory -ctx $ctx
+				$ctx.reports['reportHistory'][0].RowCount | Should -Be 5
 			}
 
 			It 'Invoke-ADPrivReportHistory-LAPS-Rename' {
