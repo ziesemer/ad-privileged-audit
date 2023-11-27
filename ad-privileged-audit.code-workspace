@@ -17,6 +17,7 @@
 		]
 	},
 	"settings": {
-		"files.trimTrailingWhitespace": true
+		"files.trimTrailingWhitespace": true,
+		"files.trimFinalNewlines": true
 	}
 }

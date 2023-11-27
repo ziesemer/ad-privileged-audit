@@ -1,5 +1,5 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-08-05
-# SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-11-26
+# SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
 #Requires -Version 5.1
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2023-08-05'
+$version = '2023-11-26'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -87,6 +87,539 @@ function Invoke-Elevate{
 	Start-Process $psExe -ArgumentList `
 		"-ExecutionPolicy Unrestricted -File `"$path`" -elevated" `
 		-Verb RunAs
+}
+
+$osVersionPattern = [regex]::new('(\d+\.\d+)(?: \((\d+)\))?')
+
+function Initialize-ADPrivOSVersions(){
+	$osVersions = @{
+		# - https://learn.microsoft.com/en-us/lifecycle/products/
+		'4.0' = @{
+			'Categories' = @{
+				'Windows NT' = 1
+			}
+			'Builds' = @{
+				'' = @{
+					'Version' = ''
+					'Availability' = '1996-08-24'
+					'EndOfServicing' = @{
+						1 = @{
+							'Mainstream' = '2002-12-31'
+							'Extended' = '2004-12-31'
+						}
+					}
+				}
+			}
+		}
+		'5.0' = @{
+			'Categories' = @{
+				'Windows 2000 Professional' = 1
+				'Windows 2000 Server' = 1
+			}
+			'Builds' = @{
+				2195 = @{
+					'Version' = ''
+					'Availability' = '2000-02-17'
+					'EndOfServicing' = @{
+						1 = @{
+							'Mainstream' = '2005-06-30'
+							'Extended' = '2010-07-13'
+						}
+					}
+				}
+			}
+		}
+		'5.1' = @{
+			'Categories' = @{
+				'Windows XP Professional' = 1
+				'Windows XP Tablet PC Edition' = 2
+			}
+			'Builds' = @{
+				2600 = @{
+					# This currently does not take into account Service Packs, given they are
+					#   not reflected in the OperatingSystemVersion for Windows XP.
+					'Version' = ''
+					'Availability' = @{
+						1 = '2001-12-31'
+						2 = '2003-02-11'
+					}
+					'EndOfServicing' = @{
+						1 = @{
+							'Mainstream' = '2009-04-14'
+							'Extended' = '2014-04-08'
+						}
+						2 = @{
+							'Mainstream' = '2009-04-14'
+							'Extended' = '2014-04-08'
+						}
+					}
+				}
+			}
+		}
+		'5.2' = @{
+			'Categories' = @{
+				'Windows Server 2003' = 1
+			}
+			'Builds' = @{
+				3790 = @{
+					# This currently does not take into account Service Packs, given they are
+					#   not reflected in the OperatingSystemVersion for Windows Server 2013.
+					'Version' = ''
+					'Availability' = '2003-05-28'
+					'EndOfServicing' = @{
+						1 = @{
+							'Mainstream' = '2010-07-13'
+							'Extended' = '2015-07-14'
+						}
+					}
+				}
+			}
+		}
+		'6.0' = @{
+			'Categories' = @{
+				'Windows Vista™ Business' = 0
+				'Windows Server® 2008 Enterprise' = 1
+				'Windows Server® 2008 Standard' = 1
+				'Windows® Storage Server 2008 Standard' = 2
+			}
+			'Builds' = @{
+				6000 = @{
+					'Version' = ''
+					'Availability' = @{
+						0 = '2007-01-25'
+						1 = '2008-05-06'
+					}
+					'EndOfServicing' = @{
+						0 = '2010-04-13'
+						1 = '2011-07-12'
+					}
+				}
+				6001 = @{
+					'Version' = ''
+					'Availability' = @{
+						0 = '2008-02-04'
+						1 = '2008-05-06'
+					}
+					'EndOfServicing' = @{
+						0 = '2011-07-12'
+						1 = '2011-07-12'
+					}
+				}
+				6002 = @{
+					'Version' = ''
+					'Availability' = @{
+						0 = '2009-04-29'
+						1 = '2009-04-29'
+						2 = '2009-07-19'
+					}
+					'EndOfServicing' = @{
+						0 = @{
+							'Mainstream' = '2012-04-10'
+							'Extended' = '2017-04-11'
+						}
+						1 = @{
+							'Mainstream' = '2015-01-13'
+							'Extended' = '2020-01-14'
+						}
+						2 = @{
+							'Mainstream' = '2015-01-13'
+							'Extended' = '2020-01-14'
+						}
+					}
+				}
+				#6003 = 6002, override below.
+			}
+		}
+		'6.1' = @{
+			'Categories' = @{
+				'Windows 7 Enterprise' = 1
+				'Windows 7 Professional N' = 1
+				'Windows 7 Professional' = 1
+				'Windows 7 Ultimate N' = 1
+				'Windows 7 Ultimate' = 1
+				'Windows Embedded Standard' = 1
+				'Windows Server 2008 R2 Datacenter' = 1
+				'Windows Server 2008 R2 Enterprise' = 1
+				'Windows Server 2008 R2 Standard' = 1
+				'Hyper-V Server' = 100
+			}
+			'Builds' = @{
+				7600 = @{
+					'Version' = ''
+					'Availability' = '2009-10-22'
+					'EndOfServicing' = @{
+						1 = '2013-04-09'
+						100 = '2012-04-10'
+					}
+				}
+				7601 = @{
+					'Version' = ''
+					'Availability' = @{
+						1 = '2011-02-22'
+						100 = '2011-04-12'
+					}
+					'EndOfServicing' = @{
+						1 = @{
+							'Mainstream' = '2015-01-13'
+							'Extended' = '2020-01-14'
+						}
+						100 = @{
+							'Mainstream' = '2014-01-14'
+							'Extended' = '2020-01-14'
+						}
+					}
+				}
+			}
+		}
+		'6.2' = @{
+			'Categories' = @{
+				'Hyper-V Server 2012' = 2
+				'Windows 8 Enterprise' = 1
+				'Windows 8 Pro' = 1
+				'Windows Server 2012 Datacenter' = 2
+				'Windows Server 2012 Standard' = 2
+			}
+			'Builds' =  @{
+				9200 = @{
+					'Version' = ''
+					'Availability' = '2012-10-30'
+					'EndOfServicing' = @{
+						1 = '2016-01-12'
+						2 = @{
+							'Mainstream' = '2018-10-09'
+							'Extended' = '2023-10-10'
+						}
+					}
+				}
+			}
+		}
+		'6.3' = @{
+			'Categories' = @{
+				'Hyper-V Server 2012 R2' = 3
+				'Windows 8.1 Enterprise' = 1
+				'Windows 8.1 Pro' = 1
+				'Windows Embedded 8.1 Industry Pro' = 2
+				'Windows Server 2012 R2 Datacenter' = 3
+				'Windows Server 2012 R2 Standard' = 3
+				'Windows Storage Server 2012 R2 Standard' = 3
+			}
+			'Builds' =  @{
+				9600 = @{
+					'Version' = ''
+					'Availability' = '2013-11-25'
+					'EndOfServicing' = @{
+						1 = @{
+							'Mainstream' = '2018-01-09'
+							'Extended' = '2023-01-10'
+						}
+						2 = @{
+							'Mainstream' = '2018-07-10'
+							'Extended' = '2023-07-11'
+						}
+						3 = @{
+							'Mainstream' = '2018-10-09'
+							'Extended' = '2023-10-10'
+						}
+					}
+				}
+			}
+		}
+		'10.0' = @{
+			'Categories' = @{
+				'Windows 10 Business' = 1
+				'Windows 10 Education' = 2
+				'Windows 10 Enterprise 2015 LTSB' = 3
+				'Windows 10 Enterprise 2016 LTSB' = 3
+				'Windows 10 Enterprise for Virtual Desktops' = 2
+				'Windows 10 Enterprise LTSC' = 3
+				'Windows 10 Enterprise N' = 2
+				'Windows 10 Enterprise' = 2
+				'Windows 10 Pro Education' = 1
+				'Windows 10 Pro for Workstations' = 1
+				'Windows 10 Pro N for Workstations' = 1
+				'Windows 10 Pro N' = 1
+				'Windows 10 Pro' = 1
+				'Windows 11 Education' = 2
+				'Windows 11 Enterprise' = 2
+				'Windows 11 Enterprise Multi-Session' = 2
+				'Windows 11 Pro' = 1
+				'Windows 11 Pro for Workstations' = 1
+
+				'Windows Server 2016 Datacenter' = 100
+				'Windows Server 2016 Standard' = 100
+				'Hyper-V Server 2016' = 100
+
+				'Windows Server 2019 Datacenter' = 110
+				'Windows Server 2019 Standard' = 110
+				'Hyper-V Server' = 110
+
+				'Windows Server 2022 Datacenter Azure Edition' = 120
+				'Windows Server 2022 Datacenter' = 120
+				'Windows Server 2022 Standard' = 120
+			}
+			'Builds' =  @{
+				# - https://learn.microsoft.com/en-us/windows/release-health/release-information#windows-10-current-versions-by-servicing-option
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-enterprise-and-education
+				10240 = @{
+					'Version' = '1507'
+					'Availability' = '2015-07-29'
+					'EndOfServicing' = @{
+						1 = '2017-05-09'
+						2 = '2017-05-09'
+						# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-2015-ltsb
+						3 = @{
+							'Mainstream' = '2020-10-13'
+							'Extended' = '2025-10-14'
+						}
+					}
+				}
+				10586 = @{
+					'Version' = '1511'
+					'Availability' = '2015-11-10'
+					'EndOfServicing' = @{
+						1 = '2017-10-10'
+						2 = '2017-10-10'
+					}
+				}
+				14393 = @{
+					'Version' = '1607'
+					'Availability' = @{
+						1 = '2016-08-02'
+						2 = '2016-08-02'
+						3 = '2016-08-02'
+						100 = '2016-10-15'
+					}
+					'EndOfServicing' = @{
+						1 = '2018-04-10'
+						2 = '2019-04-09'
+						# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-2016-ltsb
+						3 = @{
+							'Mainstream' = '2021-10-12'
+							'Extended' = '2026-10-13'
+						}
+						100 = @{
+							'Mainstream' = '2022-01-11'
+							'Extended' = '2027-01-12'
+						}
+					}
+				}
+				15063 = @{
+					'Version' = '1703'
+					'Availability' = '2017-04-11'
+					'EndOfServicing' = @{
+						1 = '2018-10-09'
+						2 = '2020-10-13'
+					}
+				}
+				16299 = @{
+					'Version' = '1709'
+					'Availability' = '2017-10-17'
+					'EndOfServicing' = @{
+						1 = '2019-04-09'
+						2 = '2020-10-13'
+					}
+				}
+				17134 = @{
+					'Version' = '1803'
+					'Availability' = '2018-04-30'
+					'EndOfServicing' = @{
+						1 = '2019-11-12'
+						2 = '2021-05-11'
+					}
+				}
+				17763 = @{
+					'Version' = '1809'
+					'Availability' = @{
+						1 = '2018-11-13'
+						2 = '2018-11-13'
+						3 = '2018-11-13'
+						110 = '2018-11-13'
+					}
+					'EndOfServicing' = @{
+						1 = '2020-11-10'
+						2 = '2021-05-11'
+						3 = @{
+							'Mainstream' = '2024-01-09'
+							'Extended' = '2029-01-09'
+						}
+						110 = @{
+							'Mainstream' = '2024-01-09'
+							'Extended' = '2029-01-09'
+						}
+					}
+				}
+				18362 = @{
+					'Version' = '1903'
+					'Availability' = '2019-05-21'
+					'EndOfServicing' = @{
+						1 = '2020-12-08'
+						2 = '2020-12-08'
+					}
+				}
+				18363 = @{
+					'Version' = '1909'
+					'Availability' = '2019-11-12'
+					'EndOfServicing' = @{
+						1 = '2021-05-11'
+						2 = '2022-05-10'
+					}
+				}
+				19041 = @{
+					'Version' = '2004'
+					'Availability' = '2020-10-20'
+					'EndOfServicing' = @{
+						1 = '2021-12-14'
+						2 = '2021-12-14'
+					}
+				}
+				19042 = @{
+					'Version' = '20H2'
+					'Availability' = '2020-10-20'
+					'EndOfServicing' = @{
+						1 = '2022-05-10'
+						2 = '2023-05-09'
+					}
+				}
+				19043 = @{
+					'Version' = '21H1'
+					'Availability' = '2021-05-18'
+					'EndOfServicing' = @{
+						1 = '2022-12-13'
+						2 = '2022-12-13'
+					}
+				}
+				19044 = @{
+					'Version' = '21H2'
+					'Availability' = '2021-11-16'
+					'EndOfServicing' = @{
+						1 = '2023-06-13'
+						2 = '2024-06-11'
+						3 = @{
+							'Mainstream' = '2027-01-12'
+							# TODO: Windows 10 IoT Enterprise LTSC 2021 is 2032-01-13
+							'Extended' = '2027-01-12'
+						}
+					}
+				}
+				19045 = @{
+					'Version' = '22H2'
+					'Availability' = '2022-10-18'
+					'EndOfServicing' = @{
+						1 = '2024-05-14'
+						2 = '2025-10-14'
+					}
+				}
+				20348 = @{
+					'Version' = ''
+					'Availability' = '2021-08-18'
+					'EndOfServicing' = @{
+						120 = @{
+							'Mainstream' = '2026-10-13'
+							'Extended' = '2031-10-14'
+						}
+					}
+				}
+				# - https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information#windows-11-current-versions
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-11-home-and-pro
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-11-enterprise-and-education
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-11-iot-enterprise
+				22000 = @{
+					'Version' = '21H2'
+					'Availability' = '2021-10-04'
+					'EndOfServicing' = @{
+						1 = '2023-10-10'
+						2 = '2024-10-08'
+					}
+				}
+				22621 = @{
+					'Version' = '22H2'
+					'Availability' = '2022-09-20'
+					'EndOfServicing' = @{
+						1 = '2024-10-08'
+						2 = '2025-10-14'
+					}
+				}
+				22631 = @{
+					'Version' = '23H2'
+					'Availability' = '2023-10-31'
+					'EndOfServicing' = @{
+						1 = '2025-11-11'
+						2 = '2026-11-10'
+					}
+				}
+			}
+		}
+	}
+
+	# Overrides:
+	$osVersions["6.0"].Builds[6003] = $osVersions["6.0"].Builds[6002]
+
+	return $osVersions
+}
+
+function Get-ADPrivOSVersion($ctx, $row){
+	$result = [PSCustomObject][ordered]@{
+		Version = $null
+		Build = $null
+		BuildVersion = $null
+		Availability = $null
+		EndOfServicingMainstream = $null
+		EndOfServicingMainstreamLife = $null
+		EndOfServicingExtended = $null
+		EndOfServicingExtendedLife = $null
+		EndOfServicingMaxLife = $null
+	}
+
+	$osMatch = $osVersionPattern.Match($row.'OperatingSystemVersion')
+	if($osMatch.Success){
+		$osVer = $ctx.osVersions[$osMatch.Groups[1].Value]
+		if($osVer){
+			$result.Version = $osMatch.Groups[1].Value
+			$cats = $osVer.'Categories'
+			$tier = $cats[$_.'OperatingSystem']
+			if($tier){
+				$searchBuild = $osMatch.Groups[2].Value
+				if($searchBuild -ne ''){
+					$searchBuild = [int]$searchBuild
+				}
+				$result.Build = $searchBuild
+				$build = $osVer.'Builds'[$searchBuild]
+				if($build){
+					$result.BuildVersion = $build.Version
+					$availability = $build.Availability
+					if($availability -isnot [string]){
+						$availability = $build.Availability[$tier]
+					}
+					$result.Availability = $availability
+
+					$endOfServicing = $build.EndOfServicing
+					if($endOfServicing -is [string]){
+						$result.EndOfServicingMainstream = $endOfServicing
+					}else{
+						$endOfServicing = $build.EndOfServicing[$tier]
+						if($endOfServicing -is [string]){
+							$result.EndOfServicingMainstream = $endOfServicing
+						}else{
+							$result.EndOfServicingMainstream = $endOfServicing['Mainstream']
+							$result.EndOfServicingExtended = $endOfServicing['Extended']
+						}
+					}
+
+					if($result.EndOfServicingMainstream){
+						$result.EndOfServicingMainstreamLife = ([datetime]$result.EndOfServicingMainstream - $ctx.params.now.Date).Days
+						$result.EndOfServicingMaxLife = $result.EndOfServicingMainstreamLife
+					}
+					if($result.EndOfServicingExtended){
+						$result.EndOfServicingExtendedLife = ([datetime]$result.EndOfServicingExtended - $ctx.params.now.Date).Days
+						$result.EndOfServicingMaxLife = [Math]::Max($result.EndOfServicingMainstreamLife, $result.EndOfServicingExtendedLife)
+					}
+				}
+			}
+		}
+	}
+
+	return $result
 }
 
 function Resolve-ADPrivProps([string]$class, [string]$context=$null, [switch]$generated){
@@ -543,6 +1076,7 @@ function Initialize-ADPrivReports(){
 	$ctx = [ordered]@{
 		params = [ordered]@{
 			version = $version
+			now = $null
 			currentUser = $null
 			hostName = [System.Net.Dns]::GetHostName()
 			domain = $null
@@ -564,6 +1098,7 @@ function Initialize-ADPrivReports(){
 		reportFiles = [ordered]@{}
 		reportRowCounts = @{}
 		adProps = [ordered]@{}
+		osVersions = $null
 	}
 
 	Write-Log ('Version: ' + $version)
@@ -978,6 +1513,40 @@ function Test-ADPrivAADPasswordProtection($ctx){
 	}
 }
 
+function Test-ADPrivUnsupportedOS($ctx){
+	$ctx.osVersions = Initialize-ADPrivOSVersions
+
+	New-ADPrivReport -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems' -dataSource {
+		Get-ADComputer `
+				-Filter (
+					"Enabled -eq `$true -and (OperatingSystem -like 'Windows*' -or OperatingSystem -like 'Hyper-V Server*')"
+				) `
+				-Properties $ctx.adProps.compIn `
+			| ForEach-Object {
+				$row = $_
+				$osVer = Get-ADPrivOSVersion $ctx $row
+				if($osVer.EndOfServicingMainstreamLife -le 365){
+					# Force a copy for now.
+					# This should be further optimized later to avoid the need for a second copy of all properties per row in ConvertTo-ADPrivRows...
+					$row = $_ | Select-Object -Property *,
+						@{n='OS Version'; e={$osVer.Version}},
+						@{n='OS Build'; e={$osVer.Build}},
+						@{n='OS Build Ver'; e={$osVer.BuildVersion}},
+						@{n='OS Availability'; e={$osVer.Availability}},
+						@{n='OS EOS Mainstream'; e={$osVer.EndOfServicingMainstream}},
+						@{n='OS EOS Mainstream Life'; e={$osVer.EndOfServicingMainstreamLife}},
+						@{n='OS EOS Extended'; e={$osVer.EndOfServicingExtended}},
+						@{n='OS EOS Extended Life'; e={$osVer.EndOfServicingExtendedLife}},
+						@{n='OS EOS Max Life'; e={$osVer.EndOfServicingMaxLife}}
+					$row
+				}
+			}	| Sort-Object -Property 'OS EOS Mainstream Life', 'lastLogonTimestamp' `
+			| ConvertTo-ADPrivRows -property (@('Name', 'OperatingSystem', 'OperatingSystemVersion', 'OS Version', 'OS Build', 'OS Build Ver', 'OS Availability',
+				'OS EOS Mainstream', 'OS EOS Mainstream Life', 'OS EOS Extended', 'OS EOS Extended Life', 'OS EOS Max Life', 'lastLogonTimestampDate') `
+					+ $ctx.adProps.compOut | Select-Object -Unique)
+	}
+}
+
 function Test-ADPrivLaps($ctx){
 	$admPwdAttrs = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext `
 		-Filter "name -eq 'ms-Mcs-AdmPwd' -or name -eq 'ms-Mcs-AdmPwdExpirationTime'" `
@@ -1136,25 +1705,7 @@ function Invoke-ADPrivReports($ctx){
 
 	# Computers with unsupported operating systems...
 
-	New-ADPrivReport -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems' -dataSource {
-		Get-ADComputer `
-				-Filter (
-					"Enabled -eq `$true -and (OperatingSystem -like 'Windows*')"
-				) `
-				-Properties $ctx.adProps.compIn `
-			| ForEach-Object {
-				$osVer = $_.OperatingSystemVersion -split ' '
-				$osVer1 = [decimal]$osVer[0]
-				if($_.OperatingSystem.StartsWith('Windows Server')){
-					if($osVer1 -lt 6.2){
-						$_
-					}
-				}elseif($osVer1 -lt 6.3){
-					$_
-				}
-			} | Sort-Object -Property 'OperatingSystemVersion', 'OperatingSystem', 'lastLogonTimestamp' `
-			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
-	}
+	Test-ADPrivUnsupportedOS -ctx $ctx
 
 	# Computers that haven't checked-in to LAPS, or are past their expiration times.
 

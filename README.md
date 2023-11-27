@@ -105,6 +105,16 @@ Current reports include:
 7. Stale Computers (`staleComputers`), based on [lastLoginTimestamp](#lastlogintimestamp).
 	1. Computers that haven't logged-in within 90 days (~3 months).
 8. Unsupported Operating Systems (`unsupportedOS`).
+	1. As of 2023-11-26, includes any Microsoft operating systems with a [Mainstream Support End Date](https://learn.microsoft.com/en-us/lifecycle/policies/fixed) already past or approaching within the next year (365 days) - or with an unknown date / status.
+	2. Some organizations may prefer to instead sort / filter by the "Extended Support" dates, which are also included (as applicable).
+	3. Dates are calculated from data gathered and manually compiled from official Microsoft sources by the author, which is included / embedded within the script.
+		1. <https://learn.microsoft.com/en-us/lifecycle/products/> and its child pages are the source for most of this data; references to specific pages are commented within the script as relevant.
+		2. Updated versions of this script will be required for updated dates and data.
+			1. Updates will be made on a best-effort basis, as the author becomes aware of needed updates.
+			2. Microsoft has occasionally extended or otherwise changed lifecycle dates after their initial publication.  These will likely prove to be particularly problematic for tracking updates against.
+			3. Microsoft: Please provide a JSON export version of these lifecycle dates.  Alternatively, a change log of all additions and updates would serve as a minimum requirement.
+			4. Feel free to report any needed additions or updates to <https://github.com/ziesemer/ad-privileged-audit/issues>.  Issue reports should include a link to a Microsoft-authoritative reference, preferably under <https://learn.microsoft.com/en-us/lifecycle/> or <https://learn.microsoft.com/en-us/windows/release-health/>.
+		3. "Life" calculations of days past (negative numbers) or remaining (positive numbers) are included, calculated from the date of the script execution.  Obviously, these calculations will become stale in the CSV exports and must be accounted for in any extended usages of the CSV data.
 9. Future lastLoginTimestamps (`futureLastLogins`).
 	1. May appear in hopefully rare cases where the system time on one or more Domain Controllers was set into the future.  There are currently not any known great fixes for this, but such a state shown be made aware of - as impacted objects will maintain their incorrect lastLoginTimestamps and not be updated to current (past) dates.
 10. Computers without [LAPS](#laps) or expired (`lapsOut`).
