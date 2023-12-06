@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-11-26
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-12-05
 # SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2023-11-26'
+$version = '2023-12-05'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -506,7 +506,7 @@ function Initialize-ADPrivOSVersions(){
 					'Version' = '22H2'
 					'Availability' = '2022-10-18'
 					'EndOfServicing' = @{
-						1 = '2024-05-14'
+						1 = '2025-10-14'
 						2 = '2025-10-14'
 					}
 				}
