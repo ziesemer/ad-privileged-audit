@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-12-05
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-12-23
 # SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2023-12-05'
+$version = '2023-12-23'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -342,6 +342,7 @@ function Initialize-ADPrivOSVersions(){
 				'Windows 11 Education' = 2
 				'Windows 11 Enterprise' = 2
 				'Windows 11 Enterprise Multi-Session' = 2
+				'Windows 11 Business' = 1
 				'Windows 11 Pro' = 1
 				'Windows 11 Pro for Workstations' = 1
 
@@ -576,44 +577,44 @@ function Get-ADPrivOSVersion($ctx, $row){
 		$osVer = $ctx.osVersions[$osMatch.Groups[1].Value]
 		if($osVer){
 			$result.Version = $osMatch.Groups[1].Value
-			$cats = $osVer.'Categories'
-			$tier = $cats[$_.'OperatingSystem']
-			if($tier){
-				$searchBuild = $osMatch.Groups[2].Value
-				if($searchBuild -ne ''){
-					$searchBuild = [int]$searchBuild
-				}
-				$result.Build = $searchBuild
-				$build = $osVer.'Builds'[$searchBuild]
-				if($build){
-					$result.BuildVersion = $build.Version
-					$availability = $build.Availability
-					if($availability -isnot [string]){
-						$availability = $build.Availability[$tier]
-					}
-					$result.Availability = $availability
 
-					$endOfServicing = $build.EndOfServicing
+			$searchBuild = $osMatch.Groups[2].Value
+			if($searchBuild -ne ''){
+				$searchBuild = [int]$searchBuild
+			}
+			$result.Build = $searchBuild
+			$build = $osVer.'Builds'[$searchBuild]
+
+			$cats = $osVer.'Categories'
+			$tier = $cats[$row.'OperatingSystem']
+			if($tier -and $build){
+				$result.BuildVersion = $build.Version
+				$availability = $build.Availability
+				if($availability -isnot [string]){
+					$availability = $build.Availability[$tier]
+				}
+				$result.Availability = $availability
+
+				$endOfServicing = $build.EndOfServicing
+				if($endOfServicing -is [string]){
+					$result.EndOfServicingMainstream = $endOfServicing
+				}else{
+					$endOfServicing = $build.EndOfServicing[$tier]
 					if($endOfServicing -is [string]){
 						$result.EndOfServicingMainstream = $endOfServicing
 					}else{
-						$endOfServicing = $build.EndOfServicing[$tier]
-						if($endOfServicing -is [string]){
-							$result.EndOfServicingMainstream = $endOfServicing
-						}else{
-							$result.EndOfServicingMainstream = $endOfServicing['Mainstream']
-							$result.EndOfServicingExtended = $endOfServicing['Extended']
-						}
+						$result.EndOfServicingMainstream = $endOfServicing['Mainstream']
+						$result.EndOfServicingExtended = $endOfServicing['Extended']
 					}
+				}
 
-					if($result.EndOfServicingMainstream){
-						$result.EndOfServicingMainstreamLife = ([datetime]$result.EndOfServicingMainstream - $ctx.params.now.Date).Days
-						$result.EndOfServicingMaxLife = $result.EndOfServicingMainstreamLife
-					}
-					if($result.EndOfServicingExtended){
-						$result.EndOfServicingExtendedLife = ([datetime]$result.EndOfServicingExtended - $ctx.params.now.Date).Days
-						$result.EndOfServicingMaxLife = [Math]::Max($result.EndOfServicingMainstreamLife, $result.EndOfServicingExtendedLife)
-					}
+				if($result.EndOfServicingMainstream){
+					$result.EndOfServicingMainstreamLife = ([datetime]$result.EndOfServicingMainstream - $ctx.params.now.Date).Days
+					$result.EndOfServicingMaxLife = $result.EndOfServicingMainstreamLife
+				}
+				if($result.EndOfServicingExtended){
+					$result.EndOfServicingExtendedLife = ([datetime]$result.EndOfServicingExtended - $ctx.params.now.Date).Days
+					$result.EndOfServicingMaxLife = [Math]::Max($result.EndOfServicingMainstreamLife, $result.EndOfServicingExtendedLife)
 				}
 			}
 		}

@@ -15,6 +15,14 @@ Describe 'OperatingSystemVersions'{
 		# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
 		$osVersions | Should -Not -BeNullOrEmpty
 
+		$ctx = [PSCustomObject]@{
+			osVersions = $osVersions
+			params = [PSCustomObject]@{
+				now = Get-Date
+			}
+		}
+		$ctx | Should -Be $ctx
+
 		function Test-ADPrivOSExclusion($row){
 			if($row.'OperatingSystem' -match 'Preview|Evaluation'){
 				return $true
@@ -56,6 +64,20 @@ Describe 'OperatingSystemVersions'{
 				}
 			}
 		}
+	}
+
+	It 'Unmatched-Version-Build' {
+		$row = [PSCustomObject]@{
+			'OperatingSystem' = '$Unmatched'
+			'OperatingSystemVersion' = '10.0 (22598)'
+		}
+		Write-Log "Inspecting: $row"
+		$osVer = Get-ADPrivOSVersion $ctx $row
+		$osVer | Should -Not -Be $null
+		Write-Log "  Found: $osVer"
+		$osVer.Version | Should -Be '10.0'
+		$osVer.Build | Should -Be 22598
+		$osVer.Build | Should -BeOfType [int]
 	}
 
 	BeforeDiscovery {
@@ -109,17 +131,6 @@ Describe 'OperatingSystemVersions'{
 	}
 
 	Context 'CSV-Sample-Get' {
-
-		BeforeAll {
-			$ctx = [PSCustomObject]@{
-				osVersions = $osVersions
-				params = [PSCustomObject]@{
-					now = Get-Date
-				}
-			}
-			$ctx | Should -Be $ctx
-		}
-
 		It 'CSV-Sample-Get - <_>' -ForEach $sampleOsVersions {
 			$row = $_
 			if(Test-ADPrivOSExclusion $row){
