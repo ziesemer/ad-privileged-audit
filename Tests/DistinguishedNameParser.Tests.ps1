@@ -1,5 +1,5 @@
 ﻿# Mark A. Ziesemer, www.ziesemer.com
-# SPDX-FileCopyrightText: Copyright © 2020-2022, Mark A. Ziesemer
+# SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
 
 #Requires -Version 5.1
 #Requires -Modules @{ModuleName='Pester'; ModuleVersion='5.3.1'}
@@ -9,19 +9,11 @@ $ErrorActionPreference = 'Stop'
 
 Describe 'DistinguishedNameParser'{
 	BeforeAll {
-		# Work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		function Set-StrictMode(){}
-
 		. $PSScriptRoot\..\AD-Privileged-Audit.ps1
 
 		$dnp = [DistinguishedNameParser]::new()
 		# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
 		$dnp | Should -Not -BeNullOrEmpty
-	}
-
-	BeforeEach {
-		# Continued work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		Microsoft.PowerShell.Core\Set-StrictMode -Version Latest
 	}
 
 	It 'Test-Hex'{

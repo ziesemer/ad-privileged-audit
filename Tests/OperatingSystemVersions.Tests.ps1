@@ -9,9 +9,6 @@ $ErrorActionPreference = 'Stop'
 
 Describe 'OperatingSystemVersions'{
 	BeforeAll {
-		# Work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		function Set-StrictMode(){}
-
 		. $PSScriptRoot\..\AD-Privileged-Audit.ps1
 
 		$osVersions = Initialize-ADPrivOSVersions
@@ -26,11 +23,6 @@ Describe 'OperatingSystemVersions'{
 				return $true
 			}
 		}
-	}
-
-	BeforeEach {
-		# Continued work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		Microsoft.PowerShell.Core\Set-StrictMode -Version Latest
 	}
 
 	It 'Availability-IsDate' {

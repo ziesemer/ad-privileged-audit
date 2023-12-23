@@ -9,9 +9,6 @@ $ErrorActionPreference = 'Stop'
 
 Describe 'Structure' {
 	It 'Source-Only' {
-		# Work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		function Set-StrictMode(){}
-
 		. $PSScriptRoot\..\AD-Privileged-Audit.ps1
 	}
 
@@ -26,9 +23,6 @@ Describe 'Structure' {
 
 Describe 'AD-Privileged-Audit' {
 	BeforeAll {
-		# Work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		function Set-StrictMode(){}
-
 		. $PSScriptRoot\..\AD-Privileged-Audit.ps1
 
 		function Get-ADDomain{
@@ -42,9 +36,6 @@ Describe 'AD-Privileged-Audit' {
 	}
 
 	BeforeEach {
-		# Continued work-around as required for https://github.com/pester/vscode-adapter/issues/85 .
-		Microsoft.PowerShell.Core\Set-StrictMode -Version Latest
-
 		$warnings.Clear()
 		$batch = $true
 		$noFiles = $true
