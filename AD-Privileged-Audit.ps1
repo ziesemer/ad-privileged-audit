@@ -1,5 +1,5 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2023-12-23
-# SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-02-13
+# SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
 #Requires -Version 5.1
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2023-12-23'
+$version = '2024-02-13'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -334,17 +334,19 @@ function Initialize-ADPrivOSVersions(){
 				'Windows 10 Enterprise LTSC' = 3
 				'Windows 10 Enterprise N' = 2
 				'Windows 10 Enterprise' = 2
+				'Windows 10 IoT Enterprise' = 2
 				'Windows 10 Pro Education' = 1
 				'Windows 10 Pro for Workstations' = 1
 				'Windows 10 Pro N for Workstations' = 1
 				'Windows 10 Pro N' = 1
 				'Windows 10 Pro' = 1
-				'Windows 11 Education' = 2
-				'Windows 11 Enterprise' = 2
-				'Windows 11 Enterprise Multi-Session' = 2
 				'Windows 11 Business' = 1
-				'Windows 11 Pro' = 1
+				'Windows 11 Education' = 2
+				'Windows 11 Enterprise Multi-Session' = 2
+				'Windows 11 Enterprise' = 2
+				'Windows 11 IoT Enterprise' = 2
 				'Windows 11 Pro for Workstations' = 1
+				'Windows 11 Pro' = 1
 
 				'Windows Server 2016 Datacenter' = 100
 				'Windows Server 2016 Standard' = 100
@@ -362,6 +364,7 @@ function Initialize-ADPrivOSVersions(){
 				# - https://learn.microsoft.com/en-us/windows/release-health/release-information#windows-10-current-versions-by-servicing-option
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-enterprise-and-education
+				# - https://learn.microsoft.com/en-us/windows/iot/iot-enterprise/whats-new/release-history
 				10240 = @{
 					'Version' = '1507'
 					'Availability' = '2015-07-29'
@@ -410,7 +413,7 @@ function Initialize-ADPrivOSVersions(){
 					'Availability' = '2017-04-11'
 					'EndOfServicing' = @{
 						1 = '2018-10-09'
-						2 = '2020-10-13'
+						2 = '2019-10-08'
 					}
 				}
 				16299 = @{
@@ -431,12 +434,7 @@ function Initialize-ADPrivOSVersions(){
 				}
 				17763 = @{
 					'Version' = '1809'
-					'Availability' = @{
-						1 = '2018-11-13'
-						2 = '2018-11-13'
-						3 = '2018-11-13'
-						110 = '2018-11-13'
-					}
+					'Availability' = '2018-11-13'
 					'EndOfServicing' = @{
 						1 = '2020-11-10'
 						2 = '2021-05-11'
@@ -498,7 +496,6 @@ function Initialize-ADPrivOSVersions(){
 						2 = '2024-06-11'
 						3 = @{
 							'Mainstream' = '2027-01-12'
-							# TODO: Windows 10 IoT Enterprise LTSC 2021 is 2032-01-13
 							'Extended' = '2027-01-12'
 						}
 					}

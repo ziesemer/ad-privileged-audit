@@ -1,5 +1,5 @@
 ﻿# Mark A. Ziesemer, www.ziesemer.com
-# SPDX-FileCopyrightText: Copyright © 2023, Mark A. Ziesemer
+# SPDX-FileCopyrightText: Copyright © 2023-2024, Mark A. Ziesemer
 
 #Requires -Version 5.1
 #Requires -Modules @{ModuleName='Pester'; ModuleVersion='5.3.1'}
@@ -27,7 +27,7 @@ Describe 'OperatingSystemVersions'{
 			if($row.'OperatingSystem' -match 'Preview|Evaluation'){
 				return $true
 			}
-			if($row.'OperatingSystemVersion' -eq '10.0 (22598)'){
+			if($row.'OperatingSystemVersion' -in '10.0 (22598)', '5.2 (3790)'){
 				return $true
 			}
 		}
