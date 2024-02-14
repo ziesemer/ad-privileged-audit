@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-02-13'
+$version = '2024-02-13.1'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -1258,6 +1258,23 @@ function Invoke-ADPrivGroups($ctx){
 	}
 }
 
+function Rename-ADPrivReportLegacyFile($oldName, $oldPatternSegment, $newNameSegment, $desc){
+	$reportNamePattern = [regex]::new("(.*)-$oldName-($oldPatternSegment\d{4}-\d{2}-\d{2}(?:-initial)?\.csv)")
+	Get-ChildItem -Path ($ctx.params.reportsFolder + "\*-$oldName-*.csv") | ForEach-Object{
+		$match = $reportNamePattern.Match($_.Name)
+		if($match.Success){
+			$newName = $match.Groups[1].Value + "-" + $newNameSegment + $match.Groups[2].Value
+			if(Test-Path (Join-Path $ctx.params.reportsFolder $newName) -PathType Leaf){
+				Write-Log ('Removing prior {0} CSV as newer file already exists following new standard: "{1}" -> "{2}"' -f $desc, $_.Name, $newName)
+				Remove-Item -Path $_.FullName
+			}else{
+				Write-Log ('Renaming prior {0} CSV to new standard: "{1}" -> "{2}"' -f $desc, $_.Name, $newName)
+				Rename-Item -Path $_.FullName -NewName $newName
+			}
+		}
+	}
+}
+
 function Invoke-ADPrivReportHistory($ctx){
 	if(!(Test-Path $ctx.params.reportsFolder -PathType Container)){
 		Write-Log 'Invoke-ADPrivReportHistory: reportsFolder does not exist, exiting.'
@@ -1267,16 +1284,10 @@ function Invoke-ADPrivReportHistory($ctx){
 	New-ADPrivReport -ctx $ctx -name 'reportHistory' -title 'AD Privileged Audit Report History' -dataSource {
 
 		# Rename LAPS report files created prior to 2022-01-08 to standard.
+		Rename-ADPrivReportLegacyFile 'LAPS' '(?:In|Out)-' 'laps' 'LAPS'
 
-		$reportNameLapsPattern = [regex]::new('(.*)-LAPS-((?:In|Out)-\d{4}-\d{2}-\d{2}\.csv)')
-		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*-LAPS-*.csv') | ForEach-Object{
-			$match = $reportNameLapsPattern.Match($_.Name)
-			if($match.Success){
-				$newName = $match.Groups[1].Value + "-laps" + $match.Groups[2].Value
-				Write-Log ('Renaming prior LAPS CSV to new standard: "{0}" -> "{1}"' -f $_.Name, $newName)
-				Rename-Item -Path $_.FullName -NewName $newName
-			}
-		}
+		# Rename staleComps report files created prior to 2024-02-13 to staleComputers standard.
+		Rename-ADPrivReportLegacyFile 'staleComps' '' 'staleComputers-' 'staleComps'
 
 		$rowCounts = @{}
 
@@ -1677,7 +1688,7 @@ function Invoke-ADPrivReports($ctx){
 
 	# Computers that haven't logged-in within # days...
 
-	New-ADPrivReport -ctx $ctx -name 'staleComps' -title 'Stale Computers' -dataSource {
+	New-ADPrivReport -ctx $ctx -name 'staleComputers' -title 'Stale Computers' -dataSource {
 		Get-ADComputer `
 				-Filter (
 					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"

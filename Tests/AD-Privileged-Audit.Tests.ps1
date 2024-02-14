@@ -203,11 +203,41 @@ Describe 'AD-Privileged-Audit' {
 				}
 				$ctx = Initialize-ADPrivReports
 
-				New-Item -Path (Join-Path $reportsFolder 'test.example.com-LAPS-In-2022-01-08.csv') -ItemType File
+				foreach($dir in 'In', 'Out'){
+					foreach($fn in "LAPS-$dir-2022-01-07", "LAPS-$dir-2022-01-08", "laps$dir-2022-01-08"){
+						New-Item -Path (Join-Path $reportsFolder "test.example.com-$fn.csv") -ItemType File
+					}
+				}
 
 				Invoke-ADPrivReportHistory -ctx $ctx
 
-				Test-Path (Join-Path $reportsFolder 'test.example.com-lapsIn-2022-01-08.csv') -PathType Leaf | Should -Be $true
+				foreach($dir in 'In', 'Out'){
+					foreach($date in '2022-01-07', '2022-01-08'){
+						Test-Path (Join-Path $reportsFolder "test.example.com-laps$dir-$date.csv") -PathType Leaf | Should -Be $true
+						Test-Path (Join-Path $reportsFolder "test.example.com-LAPS-$dir-$date.csv") -PathType Leaf | Should -Be $false
+					}
+				}
+			}
+
+			It 'Invoke-ADPrivReportHistory-staleComps-Rename' {
+				$noFiles = $false
+				$noFiles | Should -Be $false
+				$reportsFolder = Join-Path $reportsFolder 'staleComps-Rename'
+				if(Test-Path $reportsFolder -PathType Container){
+					Get-ChildItem $reportsFolder -File | Remove-Item
+				}
+				$ctx = Initialize-ADPrivReports
+
+				foreach($fn in 'staleComps-2024-02-12', 'staleComps-2024-02-13', 'staleComputers-2024-02-13'){
+					New-Item -Path (Join-Path $reportsFolder "test.example.com-$fn.csv") -ItemType File
+				}
+
+				Invoke-ADPrivReportHistory -ctx $ctx
+
+				foreach($date in '2024-02-12', '2024-02-13'){
+					Test-Path (Join-Path $reportsFolder "test.example.com-staleComputers-$date.csv") -PathType Leaf | Should -Be $true
+					Test-Path (Join-Path $reportsFolder "test.example.com-staleComps-$date.csv") -PathType Leaf | Should -Be $false
+				}
 			}
 
 			It 'Invoke-ADPrivReportHistory-LAPS-NoReports' {
