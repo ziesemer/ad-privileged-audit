@@ -237,18 +237,26 @@ function Initialize-ADPrivOSVersions(){
 				'Windows 7 Professional' = 1
 				'Windows 7 Ultimate N' = 1
 				'Windows 7 Ultimate' = 1
-				'Windows Embedded Standard' = 1
+				'Windows Embedded Standard' = 2
 				'Windows Server 2008 R2 Datacenter' = 1
 				'Windows Server 2008 R2 Enterprise' = 1
 				'Windows Server 2008 R2 Standard' = 1
+				'Windows Server 2008 HPC Edition' = 3
 				'Hyper-V Server' = 100
 			}
 			'Builds' = @{
 				7600 = @{
 					'Version' = ''
-					'Availability' = '2009-10-22'
+					'Availability' = @{
+						1 = '2009-10-22'
+						2 = '2010-07-29'
+						3 = '2010-10-17'
+						100 = '2009-10-22'
+					}
 					'EndOfServicing' = @{
 						1 = '2013-04-09'
+						2 = '2013-04-09'
+						3 = '2013-04-09'
 						100 = '2012-04-10'
 					}
 				}
@@ -256,12 +264,22 @@ function Initialize-ADPrivOSVersions(){
 					'Version' = ''
 					'Availability' = @{
 						1 = '2011-02-22'
+						2 = '2011-02-28'
+						3 = '2011-02-22'
 						100 = '2011-04-12'
 					}
 					'EndOfServicing' = @{
 						1 = @{
 							'Mainstream' = '2015-01-13'
 							'Extended' = '2020-01-14'
+						}
+						2 = @{
+							'Mainstream' = '2015-10-13'
+							'Extended' = '2020-10-13'
+						}
+						3 = @{
+							'Mainstream' = '2015-01-13'
+							'Extended' = '2020-04-14'
 						}
 						100 = @{
 							'Mainstream' = '2014-01-14'
