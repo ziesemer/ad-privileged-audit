@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-02-13
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-03-11
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -27,7 +27,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-02-13.1'
+$version = '2024-03-11'
 $warnings = [System.Collections.ArrayList]::new()
 
 function Write-Log{
@@ -822,11 +822,26 @@ function New-ADPrivReport{
 		[Parameter(Mandatory)]
 		[string]$title,
 		[Parameter(Mandatory)]
-		[scriptblock]$dataSource
+		[scriptblock]$dataSource,
+		[switch]$mayNotFail
 	)
 
 	Write-Log "Processing $title ($name)..."
-	& $dataSource | Out-ADPrivReports -ctx $ctx -name $name -title $title
+	try{
+		& $dataSource | Out-ADPrivReports -ctx $ctx -name $name -title $title
+	}catch{
+		if($mayNotFail){
+			throw $_
+		}else{
+			Write-Log 'Error:', $_ -Severity ERROR
+			[void]$warnings.Add([PSCustomObject]@{
+				Text = "Failed report: $title ($name) - $_"
+			})
+			if(!$batch){
+				$_ | Format-List -Force
+			}
+		}
+	}
 }
 
 <#
@@ -1614,7 +1629,7 @@ function Test-ADPrivLaps($ctx){
 				-extraProps 'ACL-Inherited', 'ACL-Self-Pwd-W', 'ACL-Self-PwdExp-RW' `
 				-convertScriptBlock {
 					param($row)
-					$acl = Get-Acl -Path "AD:$($row.DistinguishedName)"
+					$acl = Get-Acl -Path "Microsoft.ActiveDirectory.Management.dll\ActiveDirectory:://RootDSE/$($row.DistinguishedName)"
 					$row.'ACL-Inherited' = !$acl.AreAccessRulesProtected
 					$row.'ACL-Self-Pwd-W' = $false
 					$row.'ACL-Self-PwdExp-RW' = $false
@@ -1748,7 +1763,7 @@ function Invoke-ADPrivReports($ctx){
 
 	# Warnings
 
-	New-ADPrivReport -ctx $ctx -name 'warnings' -title 'Warnings' -dataSource {
+	New-ADPrivReport -ctx $ctx -name 'warnings' -title 'Warnings' -mayNotFail -dataSource {
 		$warnings `
 			| ConvertTo-ADPrivRows
 	}

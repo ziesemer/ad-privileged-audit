@@ -1,5 +1,5 @@
 ﻿# Mark A. Ziesemer, www.ziesemer.com
-# SPDX-FileCopyrightText: Copyright © 2020-2023, Mark A. Ziesemer
+# SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 
 #Requires -Version 5.1
 #Requires -Modules @{ModuleName='Pester'; ModuleVersion='5.3.1'}
@@ -301,6 +301,31 @@ Describe 'AD-Privileged-Audit' {
 				New-ADPrivReport -ctx $ctx -name 'sampleNameD' -title 'Sample Title' -dataSource {[PSCustomObject]@{'Name'='A1'}}
 				Should -CommandName Out-GridView -Times 1
 				Should -CommandName Out-GridView -Times 1 -ParameterFilter {$title -eq 'Sample Title (sampleNameD): 1'}
+			}
+
+			It 'New-ADPrivReport-Fail-Expected-NotBatch' {
+				$batch = $false
+				$batch | Should -Be $false
+				$ctx = Initialize-ADPrivReports
+				Mock Format-List {}
+				New-ADPrivReport -ctx $ctx -name 'sampleNameE' -title 'Sample Title' -dataSource {throw 'ExpectedMockFailure'}
+				Should -CommandName Format-List -Times 1
+				Should -CommandName Format-List -Times 1 -ParameterFilter {$InputObject.GetType().Name -eq 'ErrorRecord'}
+				$warnings.Count | Should -Be 1
+				$warnings.Text | Should -Be 'Failed report: Sample Title (sampleNameE) - ExpectedMockFailure'
+			}
+
+			It 'New-ADPrivReport-Fail-Expected-Batch' {
+				$ctx = Initialize-ADPrivReports
+				New-ADPrivReport -ctx $ctx -name 'sampleNameF' -title 'Sample Title' -dataSource {throw 'ExpectedMockFailure'}
+				$warnings.Count | Should -Be 1
+				$warnings.Text | Should -Be 'Failed report: Sample Title (sampleNameF) - ExpectedMockFailure'
+			}
+
+			It 'New-ADPrivReport-Fail-NotExpected' {
+				$ctx = Initialize-ADPrivReports
+				{New-ADPrivReport -ctx $ctx -name 'sampleNameG' -title 'Sample Title' -mayNotFail -dataSource {throw 'ExpectedMockFailure'}} `
+					| Should -Throw 'ExpectedMockFailure'
 			}
 		}
 
@@ -865,7 +890,7 @@ Describe 'AD-Privileged-Audit' {
 						Access = @()
 					}
 					# Operate on 5-12 (8).
-					if($path -match 'AD:CN=testComp(\d+),CN=Computers,DC=example,DC=com'){
+					if($path -match 'Microsoft\.ActiveDirectory\.Management\.dll\\ActiveDirectory:://RootDSE/CN=testComp(\d+),CN=Computers,DC=example,DC=com'){
 						$compNum = [int]$Matches[1]
 						if($compNum -ge 5){
 							$compNum -= 5
