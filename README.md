@@ -118,10 +118,15 @@ Current reports include:
 9. Future lastLoginTimestamps (`futureLastLogins`).
 	1. May appear in hopefully rare cases where the system time on one or more Domain Controllers was set into the future.  There are currently not any known great fixes for this, but such a state shown be made aware of - as impacted objects will maintain their incorrect lastLoginTimestamps and not be updated to current (past) dates.
 10. Computers without [LAPS](#laps) or expired (`lapsOut`).
-	1. One common cause of failed LAPS deployments to various computers is due to missing or improper AD Access Control Lists (ACLs).  A typical LAPS deployment involves using `Set-AdmPwdComputerSelfPermission` to set permissions on one or more Organizational Units (OUs), giving computers contained within the rights needed to read and write the LAPS attributes (`ms-Mcs-AdmPwd` and `ms-Mcs-AdmPwdExpirationTime`) on their own computer objects (SELF) in AD.  These columns are calculated for only this report, where they may assist with troubleshooting of failed LAPS deployments to various computers:
+	1. One common cause of failed LAPS deployments to various computers is due to missing or improper AD Access Control Lists (ACLs).  A typical LAPS deployment involves using `Set-LapsADComputerSelfPermission` (`Set-AdmPwdComputerSelfPermission` for legacy) to set permissions on one or more Organizational Units (OUs), giving computers contained within the rights needed to read and write the respective LAPS attributes on their own computer objects (SELF) in AD.  These columns are calculated for only this report, where they may assist with troubleshooting of failed LAPS deployments to various computers:
 		1. `ACL-Inherited`: Should be `True` to indicate that the computer is appropriately inheriting permissions from its parent OU.
-		2. `ACL-Self-Pwd-W`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting the `WriteProperty` right to its own `ms-Mcs-AdmPwd` attribute.
-		3. `ACL-Self-PwdExp-RW`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting both the `ReadProperty` and `WriteProperty` rights to its own `ms-Mcs-AdmPwdExpirationTime` attribute.
+		2. For Windows LAPS:
+			1. `ACL-Self-LapsPwd-W`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting the `WriteProperty` right to its own `msLAPS-Password` attribute.
+			2. `ACL-Self-LapsPwd-W`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting the `WriteProperty` right to its own `msLAPS-EncryptedPassword` attribute.
+			3. `ACL-Self-LapsPwdExp-RW`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting both the `ReadProperty` and `WriteProperty` rights to its own `msLAPS-PasswordExpirationTime` attribute.
+		3. For legacy LAPS:
+			1. `ACL-Self-AdmPwd-W`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting the `WriteProperty` right to its own `ms-Mcs-AdmPwd` attribute.
+			2. `ACL-Self-AdmPwdExp-RW`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting both the `ReadProperty` and `WriteProperty` rights to its own `ms-Mcs-AdmPwdExpirationTime` attribute.
 11. Computers with current [LAPS](#laps) (`lapsIn`).
 	1. This report is the inverse of `lapsOut` - and opposite of all the others in that a higher result count here is better.
 12. Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`).
@@ -157,9 +162,12 @@ Each report includes a significant and consistent set of columns of details that
 
 LAPS is Microsoft's "Local Administrator Password Solution".  If you are not yet using it, you should be.
 
-1. <https://www.microsoft.com/en-us/download/details.aspx?id=46899>
-	1. Official download site.  Download includes a datasheet, technical specification, and operations guide (manual).
-2. <https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/local-administrator-password-solution-laps-implementation-hints/ba-p/258296>
+1. <https://learn.microsoft.com/en-us/windows-server/identity/laps/laps-overview>
+	1. Official site for the new "Windows LAPS" - sometimes unofficially referred to as "LAPS 2.0".
+	2. Release announcement: <https://techcommunity.microsoft.com/t5/windows-it-pro-blog/by-popular-demand-windows-laps-available-now/ba-p/3788747>
+2. <https://www.microsoft.com/en-us/download/details.aspx?id=46899>
+	1. Official download site for the old "legacy LAPS".  Download includes a datasheet, technical specification, and operations guide (manual).
+3. <https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/local-administrator-password-solution-laps-implementation-hints/ba-p/258296>
 	1. Microsoft TechNet repost from 2015-12-28 with some additional useful information, commentary, and considerations.
 
 ### Group Considerations

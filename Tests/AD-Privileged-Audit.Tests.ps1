@@ -159,7 +159,7 @@ Describe 'AD-Privileged-Audit' {
 			$server = '192.0.2.123'
 			$server | Should -Be $server
 			$ctx = Initialize-ADPrivReports
-			$ctx.params.adConnectParams.Server | Should -Be '192.0.2.123'
+			$ctx.params.adConnectParams.Server | Should -Be $server
 		}
 
 		Context 'Invoke-ADPrivReportHistory'{
@@ -562,13 +562,17 @@ Describe 'AD-Privileged-Audit' {
 					testData = $null
 					createDate = Get-Date -Date '2020-01-01'
 					oldPasswordDate = Get-Date -Date '2019-01-01'
+					lapsPwdSchemaGuid = [guid]::NewGuid()
+					lapsPwdAttrsSchemaGuid = [guid]::NewGuid()
+					lapsPwdExpSchemaGuid = [guid]::NewGuid()
 					admPwdSchemaGuid = [guid]::NewGuid()
 					admPwdExpSchemaGuid = [guid]::NewGuid()
 				}
 
 				function Reset-TestReportsMockCtx{
 					foreach($x in @{
-						laps = $true
+						laps1 = $true
+						laps2 = $true
 						lapsOnDc = $false
 						testData = $testReportsMockCtx.testDataDefault
 						createDate = Get-Date -Date '2020-01-01'
@@ -743,6 +747,14 @@ Describe 'AD-Privileged-Audit' {
 							$_.'ms-Mcs-AdmPwd' = $null
 							$_.'ms-Mcs-AdmPwdExpirationTime' = $null
 						}
+						if(!$_.ContainsKey('ms-LAPS-PasswordExpirationTime')){
+							$_.'ms-LAPS-Password' = $null
+							$_.'ms-LAPS-EncryptedPassword' = $null
+							$_.'ms-LAPS-PasswordExpirationTime' = $null
+							$_.'msLAPS-Password' = $null
+							$_.'msLAPS-EncryptedPassword' = $null
+							$_.'msLAPS-PasswordExpirationTime' = $null
+						}
 						$_.ObjectClass = 'computer'
 						$_.SIDHistory = @(,[guid]::NewGuid())
 						[PSCustomObject]$_
@@ -882,6 +894,7 @@ Describe 'AD-Privileged-Audit' {
 					param(
 						[Parameter(ValueFromPipeline)]
 						$InputObject,
+						$Identity,
 						$Filter,
 						$SearchBase,
 						$Server,
@@ -894,7 +907,19 @@ Describe 'AD-Privileged-Audit' {
 						}
 					}else{
 						if($SearchBase -ceq 'CN=Schema,CN=Configuration,DC=example,DC=com'){
-							if($testReportsMockCtx.laps){
+							if($testReportsMockCtx.laps2){
+								[PSCustomObject]@{
+									Name = 'ms-LAPS-Password'
+									DistinguishedName = 'ms-LAPS-Password,CN=Schema,CN=Configuration,DC=example,DC=com'
+									SchemaIDGUID = $testReportsMockCtx.lapsPwdSchemaGuid.ToByteArray()
+								}
+								[PSCustomObject]@{
+									Name = 'ms-LAPS-PasswordExpirationTime'
+									DistinguishedName = 'ms-LAPS-PasswordExpirationTime,CN=Schema,CN=Configuration,DC=example,DC=com'
+									SchemaIDGUID = $testReportsMockCtx.lapsPwdExpSchemaGuid.ToByteArray()
+								}
+							}
+							if($testReportsMockCtx.laps1){
 								[PSCustomObject]@{
 									Name = 'ms-Mcs-AdmPwd'
 									DistinguishedName = 'ms-Mcs-AdmPwd,CN=Schema,CN=Configuration,DC=example,DC=com'
@@ -906,6 +931,10 @@ Describe 'AD-Privileged-Audit' {
 									SchemaIDGUID = $testReportsMockCtx.admPwdExpSchemaGuid.ToByteArray()
 								}
 							}
+						}elseif($Identity -ceq 'CN=ms-LAPS-Encrypted-Password-Attributes,CN=Extended-Rights,CN=Configuration,DC=example,DC=com'){
+							[PSCustomObject]@{
+								rightsGuid = $testReportsMockCtx.lapsPwdAttrsSchemaGuid.ToByteArray()
+							}
 						}else{
 							$testReportsMockCtx.testData.objects
 						}
@@ -914,6 +943,7 @@ Describe 'AD-Privileged-Audit' {
 
 				function Get-ADRootDSE{
 					@{
+						'ConfigurationNamingContext' = 'CN=Configuration,DC=example,DC=com'
 						'SchemaNamingContext' = 'CN=Schema,CN=Configuration,DC=example,DC=com'
 					}
 				}
@@ -924,7 +954,7 @@ Describe 'AD-Privileged-Audit' {
 						Access = @()
 					}
 					# Operate on 5-12 (8).
-					if($path -match 'Microsoft\.ActiveDirectory\.Management\.dll\\ActiveDirectory:://RootDSE/CN=testComp(\d+),CN=Computers,DC=example,DC=com'){
+					if($path -match '(?:Microsoft\.ActiveDirectory\.Management\.dll\\ActiveDirectory:://RootDSE/|AD:)CN=testComp(\d+),CN=Computers,DC=example,DC=com'){
 						$compNum = [int]$Matches[1]
 						if($compNum -ge 5){
 							$compNum -= 5
@@ -933,19 +963,23 @@ Describe 'AD-Privileged-Audit' {
 								$acl.AreAccessRulesProtected = $true
 							}
 							if($compNum -band 2){
-								$acl.Access += [PSCustomObject]@{
-									IdentityReference = 'NT AUTHORITY\SELF'
-									AccessControlType = [System.Security.AccessControl.AccessControlType]::Allow
-									ObjectType = $testReportsMockCtx.admPwdSchemaGuid
-									ActiveDirectoryRights = [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty
+								foreach($schemaGuid in 'lapsPwdSchemaGuid', 'lapsPwdAttrsSchemaGuid', 'admPwdSchemaGuid'){
+									$acl.Access += [PSCustomObject]@{
+										IdentityReference = 'NT AUTHORITY\SELF'
+										AccessControlType = [System.Security.AccessControl.AccessControlType]::Allow
+										ObjectType = $testReportsMockCtx.$schemaGuid
+										ActiveDirectoryRights = [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty
+									}
 								}
 							}
 							if($compNum -band 1){
-								$acl.Access += [PSCustomObject]@{
-									IdentityReference = 'NT AUTHORITY\SELF'
-									AccessControlType = [System.Security.AccessControl.AccessControlType]::Allow
-									ObjectType = $testReportsMockCtx.admPwdExpSchemaGuid
-									ActiveDirectoryRights = [System.DirectoryServices.ActiveDirectoryRights]::ReadProperty + [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty
+								foreach($schemaGuid in 'lapsPwdExpSchemaGuid', 'admPwdExpSchemaGuid'){
+									$acl.Access += [PSCustomObject]@{
+										IdentityReference = 'NT AUTHORITY\SELF'
+										AccessControlType = [System.Security.AccessControl.AccessControlType]::Allow
+										ObjectType = $testReportsMockCtx.$schemaGuid
+										ActiveDirectoryRights = [System.DirectoryServices.ActiveDirectoryRights]::ReadProperty + [System.DirectoryServices.ActiveDirectoryRights]::WriteProperty
+									}
 								}
 							}
 						}
@@ -1109,6 +1143,13 @@ Describe 'AD-Privileged-Audit' {
 				}
 
 				Context 'Test-ADPrivLaps' {
+					BeforeAll{
+						$laps2TestCols = 'msLAPS-PasswordExpirationTime', 'msLAPS-Password', 'msLAPS-EncryptedPassword', 'ACL-Self-LapsPwd-W', 'ACL-Self-LapsEncPwd-W', 'ACL-Self-LapsPwdExp-RW'
+						$laps2TestCols | Should -Be $laps2TestCols
+						$laps1TestCols = 'ms-Mcs-AdmPwdExpirationTimeDate', 'ms-Mcs-AdmPwdExpirationTime', 'ACL-Self-AdmPwd-W', 'ACL-Self-AdmPwdExp-RW'
+						$laps1TestCols | Should -Be $laps1TestCols
+					}
+
 					It 'Test-ADPrivLaps-Default' {
 						Test-ADPrivLaps -ctx $ctx | Should -Be $null
 						$warnings.Count | Should -Be 0
@@ -1119,15 +1160,54 @@ Describe 'AD-Privileged-Audit' {
 						foreach($compNum in 0..7){
 							$testComp = $lapsOuts["testComp$($compNum + 5)"][0]
 							$testComp.'ACL-Inherited' | Should -Be (!($compNum -band 4) -eq 4)
-							$testComp.'ACL-Self-Pwd-W' | Should -Be (($compNum -band 2) -eq 2)
-							$testComp.'ACL-Self-PwdExp-RW' | Should -Be (($compNum -band 1) -eq 1)
+							$testComp.'ACL-Self-LapsPwd-W' | Should -Be (($compNum -band 2) -eq 2)
+							$testComp.'ACL-Self-LapsEncPwd-W' | Should -Be (($compNum -band 2) -eq 2)
+							$testComp.'ACL-Self-LapsPwdExp-RW' | Should -Be (($compNum -band 1) -eq 1)
+							$testComp.'ACL-Self-AdmPwd-W' | Should -Be (($compNum -band 2) -eq 2)
+							$testComp.'ACL-Self-AdmPwdExp-RW' | Should -Be (($compNum -band 1) -eq 1)
+						}
+
+						$props = $ctx.reports['lapsOut'][0].PSObject.Properties.Name
+						foreach($col in $laps1TestCols + $laps2TestCols){
+							$props | Should -Contain $col
+						}
+					}
+
+					It 'Test-ADPrivLaps-Laps2' {
+						$testReportsMockCtx.laps2 = $true
+						$testReportsMockCtx.laps1 = $false
+						Test-ADPrivLaps -ctx $ctx | Should -Be $null
+						$warnings.Count | Should -Be 0
+
+						$props = $ctx.reports['lapsOut'][0].PSObject.Properties.Name
+						foreach($col in $laps2TestCols){
+							$props | Should -Contain $col
+						}
+						foreach($col in $laps1TestCols){
+							$props | Should -Not -Contain $col
+						}
+					}
+
+					It 'Test-ADPrivLaps-Laps1' {
+						$testReportsMockCtx.laps2 = $false
+						$testReportsMockCtx.laps1 = $true
+						Test-ADPrivLaps -ctx $ctx | Should -Be $null
+						$warnings.Count | Should -Be 0
+
+						$props = $ctx.reports['lapsOut'][0].PSObject.Properties.Name
+						foreach($col in $laps2TestCols){
+							$props | Should -Not -Contain $col
+						}
+						foreach($col in $laps1TestCols){
+							$props | Should -Contain $col
 						}
 					}
 
 					It 'Test-ADPrivLaps-NoLaps' {
-						$testReportsMockCtx.laps = $false
+						$testReportsMockCtx.laps2 = $false
+						$testReportsMockCtx.laps1 = $false
 						Test-ADPrivLaps -ctx $ctx | Should -Be $null
-						$warnings.Text | Should -Contain 'LAPS is not deployed!  (ms-Mcs-AdmPwd attribute does not exist.)'
+						$warnings.Text | Should -Contain 'LAPS is not deployed!  (Neither ms-Mcs-AdmPwd nor ms-LAPS-Password attribute exist.)'
 						$ctx.reports | Should -Not -Contain 'lapsIn'
 						$ctx.reports | Should -Not -Contain 'lapsOut'
 					}
@@ -1139,6 +1219,19 @@ Describe 'AD-Privileged-Audit' {
 						$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
 						$ctx.reports['lapsIn'].Count | Should -Be 3
 						$ctx.reports['lapsOut'].Count | Should -Be 10
+					}
+
+					It 'Test-ADPrivLaps-ACL-PSDrive' {
+						Mock Get-Acl -ParameterFilter {$Path -like 'Microsoft.ActiveDirectory.Management.dll\ActiveDirectory:://RootDSE/*'} `
+							-MockWith {
+								# Fail like Windows Server 2016
+								throw [System.Management.Automation.ProviderNotFoundException]::new(
+									"Cannot find a provider with the name 'Microsoft.ActiveDirectory.Management.dll\ActiveDirectory'.")
+							} -Verifiable `
+
+						Test-ADPrivLaps -ctx $ctx | Should -Be $null
+						Should -InvokeVerifiable
+						$warnings.Count | Should -Be 0
 					}
 				}
 
