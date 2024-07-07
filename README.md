@@ -147,6 +147,8 @@ Current reports include:
 		5. If [LAPS](#laps) is not deployed, or found on a possible DC.
 		6. Any warnings from Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`), as described above.
 		7. If the AD Recycle Bin is not enabled.
+		8. If the Group Policy Central Store has not been created.
+			1. Reference: <https://learn.microsoft.com/en-us/troubleshoot/windows-client/group-policy/create-and-manage-central-store>
 14. AD Privileged Audit Report History (`reportHistory`).
 
 Each report includes a significant and consistent set of columns of details that should remove most of the need for cross-referencing Active Directory Users and Computers (ADUC) or other similar tools for further details on reported objects, as well as providing some value in terms of digital forensics.

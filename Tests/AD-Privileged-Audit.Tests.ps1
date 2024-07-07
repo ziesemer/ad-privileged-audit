@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com
+﻿# Mark A. Ziesemer, www.ziesemer.com
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -521,6 +521,33 @@ Describe 'AD-Privileged-Audit' {
 					)}
 				}
 				Test-ADPrivRecycleBin
+				$warnings.Count | Should -Be 0
+			}
+		}
+
+		Context 'Test-ADPrivGroupPolicyCentralStore' {
+			BeforeAll {
+				$noFiles = $true
+				$ctx = Initialize-ADPrivReports
+				$testDnsRoot = '\\test.example.com\SYSVOL\test.example.com\policies\PolicyDefinitions\'
+				# Work-around to silence "is assigned but never used" warning from PSScriptAnalyzer.
+				$noFiles | Should -Be $true
+				$ctx | Should -Not -BeNullOrEmpty
+				$testDnsRoot | Should -Be $testDnsRoot
+			}
+
+			It 'Test-ADPrivGroupPolicyCentralStore-Missing' {
+				Mock Test-Path -Verifiable -ParameterFilter {$Path -eq $testDnsRoot} {$false}
+				Test-ADPrivGroupPolicyCentralStore -ctx $ctx
+				Should -InvokeVerifiable
+				$warnings.Count | Should -Be 1
+				$warnings.Text | Should -Be "AD Group Policy Central Store does not exist: $testDnsRoot"
+			}
+
+			It 'Test-ADPrivGroupPolicyCentralStore-Exists' {
+				Mock Test-Path -Verifiable -ParameterFilter {$Path -eq $testDnsRoot} {$true}
+				Test-ADPrivGroupPolicyCentralStore -ctx $ctx
+				Should -InvokeVerifiable
 				$warnings.Count | Should -Be 0
 			}
 		}

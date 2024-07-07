@@ -1686,6 +1686,17 @@ function Test-ADPrivRecycleBin($ctx){
 	}
 }
 
+function Test-ADPrivGroupPolicyCentralStore($ctx){
+	$dnsRoot = $ctx.params.domain.DNSRoot
+	$centralStorePath = "\\$dnsRoot\SYSVOL\$dnsRoot\policies\PolicyDefinitions\"
+	$centralStoreExists = Test-Path -PathType Container -Path $centralStorePath
+	if($centralStoreExists){
+		Write-Log "AD Group Policy Central Store exists: $centralStorePath"
+	}else{
+		Write-Log "AD Group Policy Central Store does not exist: $centralStorePath" -Severity WARN
+	}
+}
+
 function Invoke-ADPrivReports($ctx){
 	# Filters support only "simple variable references", no expressions unless shortcutted here.
 	# - https://stackoverflow.com/a/44184818/751158
@@ -1769,6 +1780,10 @@ function Invoke-ADPrivReports($ctx){
 	# Recycle Bin
 
 	Test-ADPrivRecycleBin -ctx $ctx
+
+	# Group Policy Central Store
+
+	Test-ADPrivGroupPolicyCentralStore -ctx $ctx
 
 	# Warnings
 
