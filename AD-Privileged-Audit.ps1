@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-03-11
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-07-06
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -12,6 +12,9 @@ Param(
 
 	[Parameter(ParameterSetName='elevated', Mandatory=$true)]
 	[switch]$elevated,
+	# At least at present, $server will not be respected when processing referrals from Get-ADPrivObjectCache.
+	[Parameter(ParameterSetName='elevated')]
+	[string]$server = $null,
 	[Parameter(ParameterSetName='elevated')]
 	[switch]$batch,
 	[Parameter(ParameterSetName='elevated')]
@@ -27,8 +30,9 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-03-11'
+$version = '2024-07-06'
 $warnings = [System.Collections.ArrayList]::new()
+$adConnectParams = @{}
 
 function Write-Log{
 	[CmdletBinding()]
@@ -969,7 +973,7 @@ function Get-ADPrivObjectCache($identity, $class, $ctx){
 	$result = $classCache[$id]
 	if(!$result){
 		Write-Log -Severity DEBUG "Cache miss: $class $id"
-		$adParams = @{}
+		$adParams = $adConnectParams.Clone()
 		$dnsDomain = $cache.dnParser.GetDnsDomain($cache.dnParser.Split($id))
 		if($dnsDomain -ine $ctx.params.domain.DNSRoot){
 			$adParams['Server'] = $dnsDomain
@@ -1111,6 +1115,7 @@ function Initialize-ADPrivReports(){
 			currentUser = $null
 			hostName = [System.Net.Dns]::GetHostName()
 			domain = $null
+			adConnectParams = $adConnectParams
 			psExe = (Get-Process -Id $PID).Path
 			psVersionTable = $PSVersionTable
 			interactive = !$batch
@@ -1159,7 +1164,11 @@ function Initialize-ADPrivReports(){
 		$ctx.params.fileEncoding = 'utf8BOM'
 	}
 
-	$domain = $ctx.params.domain = Get-ADDomain
+	if($server){
+		$adConnectParams['Server'] = $server
+	}
+
+	$domain = $ctx.params.domain = Get-ADDomain @adConnectParams
 
 	$currentUser = $ctx.params.currentUser = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 	[void](Test-ADPrivIsAdmin $currentUser $domain)
@@ -1220,7 +1229,7 @@ function New-ADPrivGroups($ctx){
 
 function Get-ADPrivGroup($identity){
 	try{
-		return Get-ADGroup -Identity $identity -Properties $ctx.adProps.groupIn
+		return Get-ADGroup @adConnectParams -Identity $identity -Properties $ctx.adProps.groupIn
 	}catch [Microsoft.ActiveDirectory.Management.ADIdentityNotFoundException]{
 		Write-Log $_ -Severity WARN
 	}
@@ -1391,7 +1400,7 @@ function Test-ADPrivStalePasswords($ctx, $filterDatePasswd){
 	$rc4Count = 0
 
 	New-ADPrivReport -ctx $ctx -name 'stalePasswords' -title 'Stale Passwords' -dataSource {
-		Get-ADUser `
+		Get-ADUser @adConnectParams `
 				-Filter (
 					"(Enabled -eq `$true -and pwdLastSet -lt $filterDatePasswdFt) -or ((sAMAccountName -eq 'krbtgt' -or sAMAccountName -like 'krbtgt_*') -and pwdLastSet -lt $filterDatePasswdKrbtgtFt)"
 				) `
@@ -1427,9 +1436,9 @@ function Test-ADPrivSidHistory($ctx){
 		$filter = (
 			"SIDHistory -like '*'"
 		)
-		@(Get-ADUser -Filter $filter -Properties $ctx.adProps.userIn) `
-			+ @(Get-ADComputer -Filter $filter -Properties $ctx.adProps.compIn) `
-			+ @(Get-ADGroup -Filter $filter -Properties $ctx.adProps.objectIn) `
+		@(Get-ADUser @adConnectParams -Filter $filter -Properties $ctx.adProps.userIn) `
+			+ @(Get-ADComputer @adConnectParams -Filter $filter -Properties $ctx.adProps.compIn) `
+			+ @(Get-ADGroup @adConnectParams -Filter $filter -Properties $ctx.adProps.objectIn) `
 			| Sort-Object -Property 'Name' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.allOut
 	}
@@ -1477,7 +1486,7 @@ function Test-ADPrivAADPasswordProtection($ctx){
 	}
 
 	function Invoke-ADPrivAADPPSCP($cn, $keyword, [scriptblock]$sb){
-		Get-ADObject -Filter "ObjectClass -eq 'serviceConnectionPoint' -and keywords -like '{$keyword}*'" -Properties 'msDS-Settings' | ForEach-Object{
+		Get-ADObject @adConnectParams -Filter "ObjectClass -eq 'serviceConnectionPoint' -and keywords -like '{$keyword}*'" -Properties 'msDS-Settings' | ForEach-Object{
 			Write-Log "${cn}: $($_.DistinguishedName)" -Severity DEBUG
 			$prefix = "CN=$cn,"
 			if($_.DistinguishedName.StartsWith($prefix)){
@@ -1486,7 +1495,7 @@ function Test-ADPrivAADPasswordProtection($ctx){
 				$ppObj = $ppObjs[$compDn]
 				if(!$ppObj){
 					$ppObj = $ppObjTemplate.Clone()
-					$ppObj.Computer = Get-ADComputer -Identity $compDn -Properties $ctx.adProps.compIn
+					$ppObj.Computer = Get-ADComputer @adConnectParams -Identity $compDn -Properties $ctx.adProps.compIn
 					$ppObjs[$compDn] = $ppObj
 				}
 
@@ -1559,7 +1568,7 @@ function Test-ADPrivUnsupportedOS($ctx){
 	$ctx.osVersions = Initialize-ADPrivOSVersions
 
 	New-ADPrivReport -ctx $ctx -name 'unsupportedOS' -title 'Unsupported Operating Systems' -dataSource {
-		Get-ADComputer `
+		Get-ADComputer @adConnectParams `
 				-Filter (
 					"Enabled -eq `$true -and (OperatingSystem -like 'Windows*' -or OperatingSystem -like 'Hyper-V Server*')"
 				) `
@@ -1590,7 +1599,7 @@ function Test-ADPrivUnsupportedOS($ctx){
 }
 
 function Test-ADPrivLaps($ctx){
-	$admPwdAttrs = Get-ADObject -SearchBase (Get-ADRootDSE).SchemaNamingContext `
+	$admPwdAttrs = Get-ADObject @adConnectParams -SearchBase (Get-ADRootDSE).SchemaNamingContext `
 		-Filter "name -eq 'ms-Mcs-AdmPwd' -or name -eq 'ms-Mcs-AdmPwdExpirationTime'" `
 		-Properties SchemaIDGUID | Group-Object -AsHashTable -Property 'Name'
 	$admPwdAttr = $null
@@ -1608,7 +1617,7 @@ function Test-ADPrivLaps($ctx){
 			if(!$extraProps){
 				$extraProps = @()
 			}
-			Get-ADComputer -Filter $adFilter `
+			Get-ADComputer @adConnectParams -Filter $adFilter `
 					-Properties ($ctx.adProps.compIn + 'ms-Mcs-AdmPwdExpirationTime') `
 				| Where-Object $whereFilter `
 				| Sort-Object -Property 'ms-Mcs-AdmPwdExpirationTime', 'lastLogonTimestamp' `
@@ -1651,11 +1660,11 @@ function Test-ADPrivLaps($ctx){
 				"Enabled -eq `$true -and -not (ms-Mcs-AdmPwd -notlike '*' -or ms-Mcs-AdmPwdExpirationTime -lt $now -or ms-Mcs-AdmPwdExpirationTime -notlike '*')"
 		}
 
-		@(Get-ADComputer -Filter `
+		@(Get-ADComputer @adConnectParams -Filter `
 			("Enabled -eq `$true" `
 				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')" `
 				+ ' -and (PrimaryGroupID -eq 516 -or PrimaryGroupID -eq 498 -or PrimaryGroupID -eq 521)')
-		) + @(Get-ADComputer -Filter `
+		) + @(Get-ADComputer @adConnectParams -Filter `
 			("Enabled -eq `$true" `
 				+ " -and (ms-Mcs-AdmPwd -like '*' -or ms-Mcs-AdmPwdExpirationTime -like '*')") `
 			-SearchBase $ctx.params.domain.DomainControllersContainer
@@ -1669,7 +1678,7 @@ function Test-ADPrivLaps($ctx){
 }
 
 function Test-ADPrivRecycleBin($ctx){
-	$recycleBinEnabledScopes = (Get-ADOptionalFeature -Filter "Name -eq 'Recycle Bin Feature'").EnabledScopes
+	$recycleBinEnabledScopes = (Get-ADOptionalFeature @adConnectParams -Filter "Name -eq 'Recycle Bin Feature'").EnabledScopes
 	if($recycleBinEnabledScopes){
 		Write-Log 'AD Recycle Bin is enabled.'
 	}else{
@@ -1690,7 +1699,7 @@ function Invoke-ADPrivReports($ctx){
 	# Users that haven't logged-in within # days...
 
 	New-ADPrivReport -ctx $ctx -name 'staleUsers' -title 'Stale Users' -dataSource {
-		Get-ADUser `
+		Get-ADUser @adConnectParams `
 				-Filter (
 					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"
 				) `
@@ -1706,7 +1715,7 @@ function Invoke-ADPrivReports($ctx){
 	# Users with PasswordNotRequired set...
 
 	New-ADPrivReport -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required' -dataSource {
-		Get-ADUser `
+		Get-ADUser @adConnectParams `
 				-Filter (
 					"PasswordNotRequired -eq `$true"
 				) `
@@ -1722,7 +1731,7 @@ function Invoke-ADPrivReports($ctx){
 	# Computers that haven't logged-in within # days...
 
 	New-ADPrivReport -ctx $ctx -name 'staleComputers' -title 'Stale Computers' -dataSource {
-		Get-ADComputer `
+		Get-ADComputer @adConnectParams `
 				-Filter (
 					"Enabled -eq `$true -and (lastLogonTimestamp -lt $filterDate -or lastLogonTimestamp -notlike '*')"
 				) `
@@ -1739,8 +1748,8 @@ function Invoke-ADPrivReports($ctx){
 		$filter = (
 			"Enabled -eq `$true -and (lastLogonTimestamp -ge $filterDate)"
 		)
-		@(Get-ADUser -Filter $filter -Properties $ctx.adProps.userIn) `
-			+ @(Get-ADComputer -Filter $filter -Properties $ctx.adProps.compIn) `
+		@(Get-ADUser @adConnectParams -Filter $filter -Properties $ctx.adProps.userIn) `
+			+ @(Get-ADComputer @adConnectParams -Filter $filter -Properties $ctx.adProps.compIn) `
 			| Sort-Object -Property 'lastLogonTimestamp' `
 			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
 	}

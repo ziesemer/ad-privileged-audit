@@ -1,4 +1,4 @@
-﻿# Mark A. Ziesemer, www.ziesemer.com
+# Mark A. Ziesemer, www.ziesemer.com
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 
 #Requires -Version 5.1
@@ -153,6 +153,13 @@ Describe 'AD-Privileged-Audit' {
 			$ctx = Initialize-ADPrivReports
 			$groupsIn = New-ADPrivGroups -ctx $ctx
 			$groupsIn | Should -Not -BeNullOrEmpty
+		}
+
+		It 'Server' {
+			$server = '192.0.2.123'
+			$server | Should -Be $server
+			$ctx = Initialize-ADPrivReports
+			$ctx.params.adConnectParams.Server | Should -Be '192.0.2.123'
 		}
 
 		Context 'Invoke-ADPrivReportHistory'{
