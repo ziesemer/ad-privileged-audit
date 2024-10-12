@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-07-07
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-10-12
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -30,7 +30,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-07-07'
+$version = '2024-10-12'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -182,6 +182,7 @@ function Initialize-ADPrivOSVersions(){
 		'6.0' = @{
 			'Categories' = @{
 				'Windows Vista™ Business' = 0
+				'Windows Server® 2008 Datacenter' = 1
 				'Windows Server® 2008 Enterprise' = 1
 				'Windows Server® 2008 Standard' = 1
 				'Windows® Storage Server 2008 Standard' = 2
@@ -300,6 +301,7 @@ function Initialize-ADPrivOSVersions(){
 				'Windows 8 Pro' = 1
 				'Windows Server 2012 Datacenter' = 2
 				'Windows Server 2012 Standard' = 2
+				'Windows Storage Server 2012 Standard' = 3
 			}
 			'Builds' =  @{
 				9200 = @{
@@ -308,6 +310,10 @@ function Initialize-ADPrivOSVersions(){
 					'EndOfServicing' = @{
 						1 = '2016-01-12'
 						2 = @{
+							'Mainstream' = '2018-10-09'
+							'Extended' = '2023-10-10'
+						}
+						3 = @{
 							'Mainstream' = '2018-10-09'
 							'Extended' = '2023-10-10'
 						}
@@ -357,16 +363,20 @@ function Initialize-ADPrivOSVersions(){
 				'Windows 10 Enterprise N' = 2
 				'Windows 10 Enterprise' = 2
 				'Windows 10 IoT Enterprise' = 2
+				# - https://learn.microsoft.com/en-us/windows/iot/iot-enterprise/whats-new/windows-iot-enterprise-ltsc
+				'Windows 10 IoT Enterprise LTSC' = 4
 				'Windows 10 Pro Education' = 1
 				'Windows 10 Pro for Workstations' = 1
 				'Windows 10 Pro N for Workstations' = 1
 				'Windows 10 Pro N' = 1
 				'Windows 10 Pro' = 1
 				'Windows 11 Business' = 1
+				'Windows 11 Education N' = 2
 				'Windows 11 Education' = 2
 				'Windows 11 Enterprise Multi-Session' = 2
 				'Windows 11 Enterprise' = 2
 				'Windows 11 IoT Enterprise' = 2
+				'Windows 11 Pro Education' = 1
 				'Windows 11 Pro for Workstations' = 1
 				'Windows 11 Pro' = 1
 
@@ -386,6 +396,8 @@ function Initialize-ADPrivOSVersions(){
 				# - https://learn.microsoft.com/en-us/windows/release-health/release-information#windows-10-current-versions-by-servicing-option
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-enterprise-and-education
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-team-surface-hub
+					# - (Not yet includes, as no releases are documented within.)
 				# - https://learn.microsoft.com/en-us/windows/iot/iot-enterprise/whats-new/release-history
 				10240 = @{
 					'Version' = '1507'
@@ -520,6 +532,7 @@ function Initialize-ADPrivOSVersions(){
 							'Mainstream' = '2027-01-12'
 							'Extended' = '2027-01-12'
 						}
+						4 = '2032-01-13'
 					}
 				}
 				19045 = @{
@@ -566,6 +579,14 @@ function Initialize-ADPrivOSVersions(){
 					'EndOfServicing' = @{
 						1 = '2025-11-11'
 						2 = '2026-11-10'
+					}
+				}
+				26100 = @{
+					'Version' = '24H2'
+					'Availability' = '2024-10-01'
+					'EndOfServicing' = @{
+						1 = '2026-10-13'
+						2 = '2027-10-12'
 					}
 				}
 			}

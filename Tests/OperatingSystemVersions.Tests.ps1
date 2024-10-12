@@ -24,10 +24,23 @@ Describe 'OperatingSystemVersions'{
 		$ctx | Should -Be $ctx
 
 		function Test-ADPrivOSExclusion($row){
-			if($row.'OperatingSystem' -match 'Preview|Evaluation'){
+			if($row.'OperatingSystem' -match '(Preview( \d+)?|Evaluation)$'){
 				return $true
 			}
-			if($row.'OperatingSystemVersion' -in '10.0 (22598)', '5.2 (3790)'){
+			if($row.'OperatingSystem' -eq 'Windows 10 Team'){
+				return $true
+			}
+			if($row.'OperatingSystem' -eq 'Windows XP Professional'){
+				if($row.'OperatingSystemVersion' -in '5.2 (3790)'){ # Beta 1
+					return $true
+				}
+			}
+			if($row.'OperatingSystemVersion' -in
+						# Insider Preview Builds
+						'10.0 (22598)',
+						'10.0 (25393)',
+						'10.0 (26085)'
+					){
 				return $true
 			}
 		}
