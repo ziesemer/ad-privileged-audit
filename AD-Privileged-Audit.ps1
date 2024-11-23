@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-10-12
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-11-23
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -30,7 +30,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-10-12'
+$version = '2024-11-23'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -303,7 +303,7 @@ function Initialize-ADPrivOSVersions(){
 				'Windows Server 2012 Standard' = 2
 				'Windows Storage Server 2012 Standard' = 3
 			}
-			'Builds' =  @{
+			'Builds' = @{
 				9200 = @{
 					'Version' = ''
 					'Availability' = '2012-10-30'
@@ -331,7 +331,7 @@ function Initialize-ADPrivOSVersions(){
 				'Windows Server 2012 R2 Standard' = 3
 				'Windows Storage Server 2012 R2 Standard' = 3
 			}
-			'Builds' =  @{
+			'Builds' = @{
 				9600 = @{
 					'Version' = ''
 					'Availability' = '2013-11-25'
@@ -391,13 +391,17 @@ function Initialize-ADPrivOSVersions(){
 				'Windows Server 2022 Datacenter Azure Edition' = 120
 				'Windows Server 2022 Datacenter' = 120
 				'Windows Server 2022 Standard' = 120
+
+				'Windows Server 2025 Datacenter Azure Edition' = 130
+				'Windows Server 2025 Datacenter' = 130
+				'Windows Server 2025 Standard' = 130
 			}
-			'Builds' =  @{
+			'Builds' = @{
 				# - https://learn.microsoft.com/en-us/windows/release-health/release-information#windows-10-current-versions-by-servicing-option
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-home-and-pro
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-enterprise-and-education
 				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-10-team-surface-hub
-					# - (Not yet includes, as no releases are documented within.)
+					# - (Not yet included, as no releases are documented within.)
 				# - https://learn.microsoft.com/en-us/windows/iot/iot-enterprise/whats-new/release-history
 				10240 = @{
 					'Version' = '1507'
@@ -581,12 +585,25 @@ function Initialize-ADPrivOSVersions(){
 						2 = '2026-11-10'
 					}
 				}
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-server-2025
 				26100 = @{
-					'Version' = '24H2'
-					'Availability' = '2024-10-01'
+					'Version' = @{
+						1 = '24H2'
+						2 = '24H2'
+						130 = ''
+					}
+					'Availability' = @{
+						1 = '2024-10-01'
+						2 = '2024-10-01'
+						130 = '2024-11-01'
+					}
 					'EndOfServicing' = @{
 						1 = '2026-10-13'
 						2 = '2027-10-12'
+						130 = @{
+							1 = '2029-10-09'
+							2 = '2034-10-10'
+						}
 					}
 				}
 			}
@@ -628,10 +645,15 @@ function Get-ADPrivOSVersion($ctx, $row){
 			$cats = $osVer.'Categories'
 			$tier = $cats[$row.'OperatingSystem']
 			if($tier -and $build){
-				$result.BuildVersion = $build.Version
+				$buildVersion = $build.Version
+				if($buildVersion -isnot [string]){
+					$buildVersion = $buildVersion[$tier]
+				}
+				$result.BuildVersion = $buildVersion
+
 				$availability = $build.Availability
 				if($availability -isnot [string]){
-					$availability = $build.Availability[$tier]
+					$availability = $availability[$tier]
 				}
 				$result.Availability = $availability
 
@@ -639,7 +661,7 @@ function Get-ADPrivOSVersion($ctx, $row){
 				if($endOfServicing -is [string]){
 					$result.EndOfServicingMainstream = $endOfServicing
 				}else{
-					$endOfServicing = $build.EndOfServicing[$tier]
+					$endOfServicing = $endOfServicing[$tier]
 					if($endOfServicing -is [string]){
 						$result.EndOfServicingMainstream = $endOfServicing
 					}else{
@@ -881,7 +903,7 @@ function New-ADPrivReport{
 #>
 class DistinguishedNameParser{
 	[System.Collections.Generic.IList[System.ValueTuple[string, string]]]$_names `
-    = [System.Collections.Generic.List[System.ValueTuple[string, string]]]::new(8)
+		= [System.Collections.Generic.List[System.ValueTuple[string, string]]]::new(8)
 	[System.Text.StringBuilder]$_sb = [System.Text.StringBuilder]::new(32)
 	[byte[]]$_utfBytes = [byte[]]::new(4)
 
