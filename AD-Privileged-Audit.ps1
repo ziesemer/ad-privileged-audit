@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-11-23
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-12-22
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -30,7 +30,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-11-23'
+$version = '2024-12-22'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -601,8 +601,8 @@ function Initialize-ADPrivOSVersions(){
 						1 = '2026-10-13'
 						2 = '2027-10-12'
 						130 = @{
-							1 = '2029-10-09'
-							2 = '2034-10-10'
+							'Mainstream' = '2029-10-09'
+							'Extended' = '2034-10-10'
 						}
 					}
 				}
@@ -644,7 +644,7 @@ function Get-ADPrivOSVersion($ctx, $row){
 
 			$cats = $osVer.'Categories'
 			$tier = $cats[$row.'OperatingSystem']
-			if($tier -and $build){
+			if($null -ne $tier -and $build){
 				$buildVersion = $build.Version
 				if($buildVersion -isnot [string]){
 					$buildVersion = $buildVersion[$tier]
@@ -894,7 +894,7 @@ function New-ADPrivReport{
 <#
 	.SYNOPSIS
 		Parses RFC-2253 Distinguished Names into a list of ValueTuples.
-		Required as there is no equivilent functionality publicly and readily-available to .Net or PowerShell as of this development without including 3rd-party libraries.
+		Required as there is no equivalent functionality publicly and readily-available to .Net or PowerShell as of this development without including 3rd-party libraries.
 		(Beyond needing to introduce 3rd-party dependencies into this script, the available 3rd-party libraries reviewed would introduce further concerns
 			- including that many would not even pass the unit tests included in this project, along with performance concerns, etc.)
 	.NOTES
@@ -1703,7 +1703,7 @@ function Test-ADPrivLaps($ctx){
 			if(!$extraProps){
 				$extraProps = @()
 			}
-			# Both 'Sort-Object -Property' and 'ConvertTo-ADPrivRows -dateProps' accept non-existant properties.
+			# Both 'Sort-Object -Property' and 'ConvertTo-ADPrivRows -dateProps' accept non-existent properties.
 			Get-ADComputer @adConnectParams -Filter $adFilter -Properties ($ctx.adProps.compIn + $pwdProps) `
 				| Where-Object $whereFilter `
 				| Sort-Object -Property 'ms-LAPS-PasswordExpirationTime', 'ms-Mcs-AdmPwdExpirationTime', 'lastLogonTimestamp' `

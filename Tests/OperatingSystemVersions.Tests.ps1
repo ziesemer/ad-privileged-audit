@@ -98,62 +98,87 @@ Describe 'OperatingSystemVersions'{
 		$sampleOsVersions | Should -Be $sampleOsVersions
 	}
 
-	Context 'CSV-Sample-Raw' {
-		It 'CSV-Sample-Raw - <_>' -ForEach $sampleOsVersions {
-			$row = $_
-			if(Test-ADPrivOSExclusion $row){
-				return
-			}
-			Write-Log "Inspecting: $row"
-			$osMatch = $osVersionPattern.Match($row.'OperatingSystemVersion')
-			$osMatch.Success | Should -Be $true -Because $row.'OperatingSystemVersion'
+	Context 'CSV-Samples'{
 
-			$osVer = $osVersions[$osMatch.Groups[1].Value]
-			$osVer | Should -Not -Be $null
-			$cats = $osVer.'Categories'
-			$cats.Keys | Should -Contain $row.'OperatingSystem'
+		Context '<_>' -ForEach $sampleOsVersions {
+			It 'Raw' {
+				$row = $_
+				if(Test-ADPrivOSExclusion $row){
+					return
+				}
+				Write-Log "Inspecting: $row"
+				$osMatch = $osVersionPattern.Match($row.'OperatingSystemVersion')
+				$osMatch.Success | Should -Be $true -Because $row.'OperatingSystemVersion'
 
-			$tier = $cats[$row.'OperatingSystem']
-			$tier | Should -Not -Be $null
+				$osVer = $osVersions[$osMatch.Groups[1].Value]
+				$osVer | Should -Not -Be $null
+				$cats = $osVer.'Categories'
+				$cats.Keys | Should -Contain $row.'OperatingSystem'
 
-			$searchBuild = $osMatch.Groups[2].Value
-			if($searchBuild -ne ''){
-				$searchBuild = [int]$searchBuild
-			}
-			$build = $osVer.'Builds'[$searchBuild]
-			$build | Should -Not -Be $null
+				$tier = $cats[$row.'OperatingSystem']
+				$tier | Should -Not -Be $null
 
-			$build.Version | Should -Not -Be $null
+				$searchBuild = $osMatch.Groups[2].Value
+				if($searchBuild -ne ''){
+					$searchBuild = [int]$searchBuild
+				}
+				$build = $osVer.'Builds'[$searchBuild]
+				$build | Should -Not -Be $null
 
-			$availability = $build.Availability
-			$availability | Should -Not -Be $null
-			if($availability -isnot [string]){
-				$availability = $build.Availability[$tier]
+				$build.Version | Should -Not -Be $null
+
+				$availability = $build.Availability
 				$availability | Should -Not -Be $null
-			}
+				if($availability -isnot [string]){
+					$availability = $build.Availability[$tier]
+					$availability | Should -Not -Be $null
+				}
 
-			$endOfServicing = $build.EndOfServicing
-			$endOfServicing | Should -Not -Be $null
-			if($endOfServicing -isnot [string]){
-				$endOfServicing = $build.EndOfServicing[$tier]
+				$endOfServicing = $build.EndOfServicing
 				$endOfServicing | Should -Not -Be $null
+				if($endOfServicing -isnot [string]){
+					$endOfServicing = $build.EndOfServicing[$tier]
+					$endOfServicing | Should -Not -Be $null
+				}
+
+				Write-Log "  Found: - T: $tier - V: $($build.Version) - A: $availability - EOS: $endOfServicing"
 			}
 
-			Write-Log "  Found: - T: $tier - V: $($build.Version) - A: $availability - EOS: $endOfServicing"
-		}
-	}
+			Context 'Get-ADPrivOSVersion' {
 
-	Context 'CSV-Sample-Get' {
-		It 'CSV-Sample-Get - <_>' -ForEach $sampleOsVersions {
-			$row = $_
-			if(Test-ADPrivOSExclusion $row){
-				return
+				BeforeAll {
+					$row = $_
+					$exclude = Test-ADPrivOSExclusion $row
+					if(!$exclude){
+						Write-Log "Inspecting: $row"
+						$osVer = Get-ADPrivOSVersion $ctx $row
+						$osVer | Should -Be $osVer
+					}
+				}
+
+				It 'Get' {
+					if($exclude){
+						return
+					}
+					$osVer | Should -Not -Be $null
+					Write-Log "  Found: $osVer"
+				}
+
+				It 'EndOfServicingMainstream' {
+					if($exclude){
+						return
+					}
+					$osVer.EndOfServicingMainstream | Should -BeOfType [string]
+					Get-Date -Date $osVer.EndOfServicingMainstream
+				}
+
+				It 'EndOfServicingMaxLife' {
+					if($exclude){
+						return
+					}
+					$osVer.EndOfServicingMaxLife | Should -BeOfType [int]
+				}
 			}
-			Write-Log "Inspecting: $row"
-			$osVer = Get-ADPrivOSVersion $ctx $row
-			$osVer | Should -Not -Be $null
-			Write-Log "  Found: $osVer"
 		}
 	}
-
 }
