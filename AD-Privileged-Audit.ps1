@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2024-12-22
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2025-04-18
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -382,6 +382,7 @@ function Initialize-ADPrivOSVersions(){
 
 				'Windows Server 2016 Datacenter' = 100
 				'Windows Server 2016 Standard' = 100
+				'Windows Storage Server 2016 Standard' = 100
 				'Hyper-V Server 2016' = 100
 
 				'Windows Server 2019 Datacenter' = 110
