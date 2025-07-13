@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2025-04-18
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2025-07-13
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -12,15 +12,21 @@ Param(
 
 	[Parameter(ParameterSetName='elevated', Mandatory=$true)]
 	[switch]$elevated,
+
 	# At least at present, $server will not be respected when processing referrals from Get-ADPrivObjectCache.
+	[Parameter(ParameterSetName='notElevated')]
 	[Parameter(ParameterSetName='elevated')]
 	[string]$server = $null,
+	[Parameter(ParameterSetName='notElevated')]
 	[Parameter(ParameterSetName='elevated')]
 	[switch]$batch,
+	[Parameter(ParameterSetName='notElevated')]
 	[Parameter(ParameterSetName='elevated')]
 	[IO.FileInfo]$reportsFolder = $null,
+	[Parameter(ParameterSetName='notElevated')]
 	[Parameter(ParameterSetName='elevated')]
 	[switch]$noFiles,
+	[Parameter(ParameterSetName='notElevated')]
 	[Parameter(ParameterSetName='elevated')]
 	[switch]$noZip,
 	[switch]$PassThru
@@ -30,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2024-12-22'
+$version = '2025-07-13'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -88,9 +94,24 @@ function Invoke-Elevate{
 	$psExe = (Get-Process -Id $PID).Path
 	Write-Log "PowerShell executable: $psExe"
 
-	Start-Process $psExe -ArgumentList `
-		"-ExecutionPolicy Unrestricted -File `"$path`" -elevated" `
-		-Verb RunAs
+	$sArgs = @('-ExecutionPolicy', 'Unrestricted', '-File', "`"$path`"", '-elevated')
+	if($server){
+		$sArgs += @('-Server', "`"$server`"")
+	}
+	if($batch){
+		$sArgs += @('-batch')
+	}
+	if($reportsFolder){
+		$sArgs += @('-reportsFolder', "`"$reportsFolder`"")
+	}
+	if($noFiles){
+		$sArgs += @('-noFiles')
+	}
+	if($noZip){
+		$sArgs += @('-noZip')
+	}
+
+	Start-Process $psExe -ArgumentList $sArgs -Verb RunAs
 }
 
 $osVersionPattern = [regex]::new('(\d+\.\d+)(?: \((\d+)\))?')
