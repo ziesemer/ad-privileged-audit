@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2025-07-13.1'
+$version = '2025-07-13.2'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -117,7 +117,8 @@ function Invoke-Elevate{
 	Start-Process $psExe -ArgumentList $sArgs -Verb RunAs
 }
 
-$osVersionPattern = [regex]::new('(\d+\.\d+)(?: \((\d+)\))?')
+$osVersionPattern = [regex]::new('(\d+\.\d+)(?: \((\d+)\))?',
+	[System.Text.RegularExpressions.RegexOptions]::Compiled)
 
 function Initialize-ADPrivOSVersions(){
 	$osVersions = @{
@@ -1369,7 +1370,8 @@ function Invoke-ADPrivGroups($ctx){
 }
 
 function Rename-ADPrivReportLegacyFile($oldName, $oldPatternSegment, $newNameSegment, $desc){
-	$reportNamePattern = [regex]::new("(.*)-$oldName-($oldPatternSegment\d{4}-\d{2}-\d{2}(?:-initial)?\.csv)")
+	$reportNamePattern = [regex]::new("(.*)-$oldName-($oldPatternSegment\d{4}-\d{2}-\d{2}(?:-initial)?\.csv)",
+		[System.Text.RegularExpressions.RegexOptions]::Compiled)
 	Get-ChildItem -Path ($ctx.params.reportsFolder + "\*-$oldName-*.csv") | ForEach-Object{
 		$match = $reportNamePattern.Match($_.Name)
 		if($match.Success){
@@ -1416,7 +1418,8 @@ function Invoke-ADPrivReportHistory($ctx){
 			$rowCounts[$rc.Key] = $rc.Value
 		}
 
-		$reportNamePattern = [regex]::new('(.*)-(.*)-(\d{4}-\d{2}-\d{2})(?:-(initial))?\.csv')
+		$reportNamePattern = [regex]::new('(.*)-(.*)-(\d{4}-\d{2}-\d{2})(?:-(initial))?\.csv',
+			[System.Text.RegularExpressions.RegexOptions]::Compiled)
 		Get-ChildItem -Path ($ctx.params.reportsFolder + '\*.csv') -Exclude '*-reportHistory-*' | ForEach-Object -Process {
 			$csvFile = $_
 			$rowCount = $rowCounts[$csvFile.Name]
