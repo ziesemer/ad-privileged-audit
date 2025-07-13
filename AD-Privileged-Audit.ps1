@@ -36,11 +36,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2025-07-13'
+$version = '2025-07-13.1'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
 function Write-Log{
+	# False-positive
+	[System.Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidOverwritingBuiltInCmdlets', '')]
+
 	[CmdletBinding()]
 	param(
 		[Parameter()]
