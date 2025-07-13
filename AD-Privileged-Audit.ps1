@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2025-07-13.2'
+$version = '2025-07-13.3'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -403,6 +403,7 @@ function Initialize-ADPrivOSVersions(){
 				'Windows 11 IoT Enterprise' = 2
 				'Windows 11 Pro Education' = 1
 				'Windows 11 Pro for Workstations' = 1
+				'Windows 11 Pro N' = 1
 				'Windows 11 Pro' = 1
 
 				'Windows Server 2016 Datacenter' = 100
@@ -421,6 +422,8 @@ function Initialize-ADPrivOSVersions(){
 				'Windows Server 2025 Datacenter Azure Edition' = 130
 				'Windows Server 2025 Datacenter' = 130
 				'Windows Server 2025 Standard' = 130
+				# - https://learn.microsoft.com/en-us/lifecycle/products/windows-11-iot-enterprise-ltsc-2024
+				'Windows 11 IoT Enterprise LTSC' = 130
 			}
 			'Builds' = @{
 				# - https://learn.microsoft.com/en-us/windows/release-health/release-information#windows-10-current-versions-by-servicing-option
