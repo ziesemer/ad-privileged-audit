@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2025-07-13
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2025-10-14
 # SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2025-07-13.3'
+$version = '2025-10-14'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -633,6 +633,15 @@ function Initialize-ADPrivOSVersions(){
 							'Mainstream' = '2029-10-09'
 							'Extended' = '2034-10-10'
 						}
+					}
+				}
+				# - https://learn.microsoft.com/en-us/windows/release-health/windows11-release-information
+				26200 = @{
+					'Version' = '25H2'
+					'Availability' = '2025-09-30'
+					'EndOfServicing' = @{
+						1 = '2027-10-12'
+						2 = '2028-10-10'
 					}
 				}
 			}
