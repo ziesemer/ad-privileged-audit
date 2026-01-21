@@ -1,5 +1,5 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2025-10-14
-# SPDX-FileCopyrightText: Copyright © 2020-2024, Mark A. Ziesemer
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2026-01-20
+# SPDX-FileCopyrightText: Copyright © 2020-2026, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
 #Requires -Version 5.1
@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2025-10-14'
+$version = '2026-01-20'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -1674,7 +1674,7 @@ function Test-ADPrivUnsupportedOS($ctx){
 						@{n='OS EOS Max Life'; e={$osVer.EndOfServicingMaxLife}}
 					$row
 				}
-			}	| Sort-Object -Property 'OS EOS Mainstream Life', 'lastLogonTimestamp' `
+			}	| Sort-Object -Property 'OS EOS Max Life', 'OS EOS Mainstream Life', 'OS EOS Extended Life', 'lastLogonTimestamp' `
 			| ConvertTo-ADPrivRows -property (@('Name', 'OperatingSystem', 'OperatingSystemVersion', 'OS Version', 'OS Build', 'OS Build Ver', 'OS Availability',
 				'OS EOS Mainstream', 'OS EOS Mainstream Life', 'OS EOS Extended', 'OS EOS Extended Life', 'OS EOS Max Life', 'lastLogonTimestampDate') `
 					+ $ctx.adProps.compOut | Select-Object -Unique)

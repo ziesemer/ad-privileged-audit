@@ -204,5 +204,5 @@ With the exception of 2 reports, only enabled (where "Enabled" is "True") accoun
 
 Mark Ziesemer, CISSP, CCSP, CSSLP
 
-* <https://www.ziesemer.com>
-* <https://www.linkedin.com/in/ziesemer/>
+* 🌐 <https://www.ziesemer.com>
+* 🔗 <https://www.linkedin.com/in/ziesemer/>
