@@ -100,11 +100,17 @@ Current reports include:
 		3. References:
 			1. <https://techcommunity.microsoft.com/t5/core-infrastructure-and-security/decrypting-the-selection-of-supported-kerberos-encryption-types/ba-p/1628797>
 5. Password Not Required (`passwordNotRequired`).
-	1. Interdomain trust accounts - where the UserAccountControl is 0x820 (2080) - can be safely ignored here as long as the account is recognized as part of a current and valid domain trust.  See <https://learn.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties> for details of these values.  Exclusions for this may be added in the future with some further considerations around this.
-6. SID History (`sidHistory`).
-7. Stale Computers (`staleComputers`), based on [lastLoginTimestamp](#lastlogintimestamp).
+	1. Interdomain trust accounts - where the UserAccountControl is `0x820` (`2080`) - can be safely ignored here as long as the account is recognized as part of a current and valid domain trust.  See <https://learn.microsoft.com/en-us/troubleshoot/windows-server/identity/useraccountcontrol-manipulate-account-properties> for details of these values.  Exclusions for this may be added in the future with some further considerations around this.
+6. Service Accounts Supported Encryption Types (`spnSupportedEncryptionTypes`).
+	1. Any service accounts (has a `servicePrincipalName` or "SPN" set), where legacy supported encryption types (`msDS-SupportedEncryptionTypes`) are enabled - or in some cases and maybe more accurately, not disabled.
+	2. Includes where `USE_DES_KEY_ONLY` (`0x200000`) is set in the `UserAccountControl` field.
+	3. References:
+		1. <https://techcommunity.microsoft.com/blog/coreinfrastructureandsecurityblog/decrypting-the-selection-of-supported-kerberos-encryption-types/1628797> (Same as above.)
+		2. <https://techcommunity.microsoft.com/blog/windowsservernewsandbestpractices/removal-of-des-in-kerberos-for-windows-server-and-client/4386903>
+7. SID History (`sidHistory`).
+8. Stale Computers (`staleComputers`), based on [lastLoginTimestamp](#lastlogintimestamp).
 	1. Computers that haven't logged-in within 90 days (~3 months).
-8. Unsupported Operating Systems (`unsupportedOS`).
+9. Unsupported Operating Systems (`unsupportedOS`).
 	1. As of 2023-11-26, includes any Microsoft operating systems with a [Mainstream Support End Date](https://learn.microsoft.com/en-us/lifecycle/policies/fixed) already past or approaching within the next year (365 days) - or with an unknown date / status.
 	2. Some organizations may prefer to instead sort / filter by the "Extended Support" dates, which are also included (as applicable).
 	3. Dates are calculated from data gathered and manually compiled from official Microsoft sources by the author, which is included / embedded within the script.
@@ -115,9 +121,9 @@ Current reports include:
 			3. Microsoft: Please provide a JSON export version of these lifecycle dates.  Alternatively, a change log of all additions and updates would serve as a minimum requirement.
 			4. Feel free to report any needed additions or updates to <https://github.com/ziesemer/ad-privileged-audit/issues>.  Issue reports should include a link to a Microsoft-authoritative reference, preferably under <https://learn.microsoft.com/en-us/lifecycle/> or <https://learn.microsoft.com/en-us/windows/release-health/>.
 		3. "Life" calculations of days past (negative numbers) or remaining (positive numbers) are included, calculated from the date of the script execution.  Obviously, these calculations will become stale in the CSV exports and must be accounted for in any extended usages of the CSV data.
-9. Future lastLoginTimestamps (`futureLastLogins`).
+10. Future lastLoginTimestamps (`futureLastLogins`).
 	1. May appear in hopefully rare cases where the system time on one or more Domain Controllers was set into the future.  There are currently not any known great fixes for this, but such a state shown be made aware of - as impacted objects will maintain their incorrect lastLoginTimestamps and not be updated to current (past) dates.
-10. Computers without [LAPS](#laps) or expired (`lapsOut`).
+11. Computers without [LAPS](#laps) or expired (`lapsOut`).
 	1. One common cause of failed LAPS deployments to various computers is due to missing or improper AD Access Control Lists (ACLs).  A typical LAPS deployment involves using `Set-LapsADComputerSelfPermission` (`Set-AdmPwdComputerSelfPermission` for legacy) to set permissions on one or more Organizational Units (OUs), giving computers contained within the rights needed to read and write the respective LAPS attributes on their own computer objects (SELF) in AD.  These columns are calculated for only this report, where they may assist with troubleshooting of failed LAPS deployments to various computers:
 		1. `ACL-Inherited`: Should be `True` to indicate that the computer is appropriately inheriting permissions from its parent OU.
 		2. For Windows LAPS:
@@ -127,9 +133,9 @@ Current reports include:
 		3. For legacy LAPS:
 			1. `ACL-Self-AdmPwd-W`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting the `WriteProperty` right to its own `ms-Mcs-AdmPwd` attribute.
 			2. `ACL-Self-AdmPwdExp-RW`: Should be `True` to indicate that the computer object has an Access Control Entry (ACE) granting both the `ReadProperty` and `WriteProperty` rights to its own `ms-Mcs-AdmPwdExpirationTime` attribute.
-11. Computers with current [LAPS](#laps) (`lapsIn`).
+12. Computers with current [LAPS](#laps) (`lapsIn`).
 	1. This report is the inverse of `lapsOut` - and opposite of all the others in that a higher result count here is better.
-12. Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`).
+13. Azure Active Directory (AAD) Password Protection (`aadPasswordProtection`).
 	1. Details any usage of Azure Active Directory (AAD) Password Protection, as detailed at <https://learn.microsoft.com/en-us/azure/active-directory/authentication/concept-password-ban-bad-on-premises>.
 		1. This report details any servers that are a Domain Controller, running the DC agent, and/or running the proxy service.
 		2. Any agent/proxy version and heartbeat timestamp, agent password policy date, and proxy tenant name and ID are reported for each.
@@ -142,7 +148,7 @@ Current reports include:
 		3. If no proxies are found.
 		4. If only 1 proxy is found for more than one Domain Controller.
 			1. This is not a requirement, but a recommendation for high availability of the solution.
-13. Warnings (`warnings`).
+14. Warnings (`warnings`).
 	1. Current reported warnings include:
 		1. If the script is not running as a Domain Administrator, as results may be incomplete ([Dependencies](#dependencies)).
 		2. If an expected AD privileged group is not found, or with an unexpected SID ([Group Considerations](#group-considerations)).
@@ -154,7 +160,7 @@ Current reports include:
 		7. If the AD Recycle Bin is not enabled.
 		8. If the Group Policy Central Store has not been created.
 			1. Reference: <https://learn.microsoft.com/en-us/troubleshoot/windows-client/group-policy/create-and-manage-central-store>
-14. AD Privileged Audit Report History (`reportHistory`).
+15. AD Privileged Audit Report History (`reportHistory`).
 
 Each report includes a significant and consistent set of columns of details that should remove most of the need for cross-referencing Active Directory Users and Computers (ADUC) or other similar tools for further details on reported objects, as well as providing some value in terms of digital forensics.
 
@@ -195,10 +201,15 @@ See also:
 
 One common misconception observed when reviewing these reports together with environment owners is that most of the returned results can be ignored because they had already disabled the accounts in question.  To the contrary - results being returned on these reports are only those accounts that should be of concern.  This should be clearly visible by the provided "Enabled" column, which is the 3rd displayed column on most reports.
 
-With the exception of 2 reports, only enabled (where "Enabled" is "True") accounts are returned.  The exceptions are:
+With the exception of 3 reports, only enabled (where "Enabled" is "True") accounts are returned.  The exceptions are:
 
-1. Privileged AD Group Members (`privGroupMembers`).  If a disabled account is nested into one of these privileged groups, it is all too easy for such an account to be accidentally or maliciously re-enabled at some point in the future - so disabled accounts are included here for review and consideration.  It is a common practice to disable unused or unneeded accounts before removing them - but this should only be temporary, and on the order of days, not for a month or more.
-2. Password Not Required (`passwordNotRequired`).  Again - in most cases, this attribute has been set on accounts due to gross misconfigurations and/or errant scripting - and any such accounts (even disabled) should either have this attribute reset, or the account removed completely if it is no longer required.
+1. Privileged AD Group Members (`privGroupMembers`).
+If a disabled account is nested into one of these privileged groups, it is all too easy for such an account to be accidentally or maliciously re-enabled at some point in the future - so disabled accounts are included here for review and consideration.
+It is a common practice to disable unused or unneeded accounts before removing them - but this should only be temporary, and on the order of days, not for a month or more.
+2. Password Not Required (`passwordNotRequired`).
+Again - in most cases, this attribute has been set on accounts due to gross misconfigurations and/or errant scripting - and any such accounts (even disabled) should either have this attribute reset, or the account removed completely if it is no longer required.
+3. Service Accounts Supported Encryption Types (`spnSupportedEncryptionTypes`).
+Same as the above.
 
 ## Author
 

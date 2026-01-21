@@ -125,6 +125,8 @@ Describe 'AD-Privileged-Audit' {
 					function Resolve-ADPrivProperty([string]$name){
 						if($name -eq 'pwdLastSet'){
 							($PSItem.'PasswordLastSet').ToFileTime()
+						}elseif($name -notin $PSItem.PSObject.Properties.Name){
+							$null
 						}else{
 							$PSItem.$name
 						}
@@ -740,6 +742,24 @@ Describe 'AD-Privileged-Audit' {
 							}
 							$c
 						}
+						foreach($compNum in 20..27){
+							$uac = 0x1000
+							if($compNum -band 0x1 -eq 0x1){
+								$uac = $uac -bor 0x200000
+							}
+							$c = @{
+								Name = "testComp$compNum"
+								DistinguishedName = "CN=testComp$compNum,CN=Computers,DC=example,DC=com"
+								OperatingSystem = 'Windows Server 2022 Standard'
+								OperatingSystemVersion = '10.0 (20348)'
+								PrimaryGroup = 'CN=Domain Computers,OU=Users,DC=example,DC=com'
+								PrimaryGroupID = 515
+								'servicePrincipalName' = "http/testComp$compNum"
+								'msDS-SupportedEncryptionTypes' = (0x0, 0x1, 0x2, 0x4, 0x8, 0x10, 0x1c, 0xff)[$compNum - 20]
+								'userAccountControl' = $uac
+							}
+							$c
+						}
 					) | ForEach-Object{
 						$_.Enabled = $true
 						$_.lastLogonTimestamp = $testReportsMockCtx.createDate.ToFileTime()
@@ -1154,7 +1174,7 @@ Describe 'AD-Privileged-Audit' {
 						Test-ADPrivLaps -ctx $ctx | Should -Be $null
 						$warnings.Count | Should -Be 0
 						$ctx.reports['lapsIn'].Count | Should -Be 2
-						$ctx.reports['lapsOut'].Count | Should -Be 10
+						$ctx.reports['lapsOut'].Count | Should -Be 18
 
 						$lapsOuts = $ctx.reports['lapsOut'] | Group-Object -Property 'Name' -AsHashTable
 						foreach($compNum in 0..7){
@@ -1218,7 +1238,7 @@ Describe 'AD-Privileged-Audit' {
 						Test-ADPrivLaps -ctx $ctx | Should -Be $null
 						$warnings.Text | Should -Contain 'LAPS found on possible domain controller: CN=test-dc1,OU=Domain Controllers,DC=example,DC=com'
 						$ctx.reports['lapsIn'].Count | Should -Be 3
-						$ctx.reports['lapsOut'].Count | Should -Be 10
+						$ctx.reports['lapsOut'].Count | Should -Be 18
 					}
 
 					It 'Test-ADPrivLaps-ACL-PSDrive' {

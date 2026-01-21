@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2026-01-20'
+$version = '2026-01-20.1'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -1514,6 +1514,46 @@ function Test-ADPrivStalePasswords($ctx, $filterDatePasswd){
 	}
 }
 
+function Test-ADPrivServiceAccountEncryptionTypes($ctx){
+	function Format-ADPrivHex($val){
+		return '0x{0:x}' -f $val
+	}
+	New-ADPrivReport -ctx $ctx -name 'spnSupportedEncryptionTypes' -title 'Service Accounts Supported Encryption Types' -dataSource {
+		# - https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-kile/6cfc7b50-11ed-4b4d-846d-6f08f0812919
+		# - https://techcommunity.microsoft.com/blog/coreinfrastructureandsecurityblog/decrypting-the-selection-of-supported-kerberos-encryption-types/1628797
+		$filter = (
+			'servicePrincipalName -like ''*'' -and (' `
+				+ 'msDS-SupportedEncryptionTypes -bor 0x7' `
+				+ ' -or msDS-SupportedEncryptionTypes -eq 0' `
+				+ ' -or msDS-SupportedEncryptionTypes -notlike ''*''' `
+				+ ' -or userAccountControl -band 0x200000' `
+				+ ')'
+		)
+		@(Get-ADUser @adConnectParams -Filter $filter -Properties ($ctx.adProps.userIn + 'msDS-SupportedEncryptionTypes')) `
+			+ @(Get-ADComputer @adConnectParams -Filter $filter -Properties ($ctx.adProps.compIn + 'msDS-SupportedEncryptionTypes')) `
+			| Sort-Object -Property @{Expression = {[int]$_.'Enabled'}; Descending = $true}, `
+				@{Expression = 'lastLogonTimestamp'; Descending = $true}, `
+				'Name' `
+			| ConvertTo-ADPrivRows -property (@('Name', `
+						'DES-CBC-CRC', 'DES-CBC-MD5', 'RC4-HMAC', 'AES128-CTS-HMAC-SHA1-96', 'AES256-CTS-HMAC-SHA1-96', 'msDS-SupportedEncryptionTypes', `
+						'USE_DES_KEY_ONLY', 'Enabled', 'lastLogonTimestamp', 'lastLogonTimestampDate', 'PasswordLastSet') `
+					+ $ctx.adProps.allOut | Select-Object -Unique) `
+				-scriptBlock {
+					param($row)
+					if($row.Contains('msDS-SupportedEncryptionTypes')){
+						$set = $row.'msDS-SupportedEncryptionTypes'
+						$row.'msDS-SupportedEncryptionTypes' = Format-ADPrivHex $set
+						$row.'DES-CBC-CRC' = Format-ADPrivHex ($set -band 0x1)
+						$row.'DES-CBC-MD5' = Format-ADPrivHex ($set -band 0x2)
+						$row.'RC4-HMAC' = Format-ADPrivHex ($set -band 0x4)
+						$row.'AES128-CTS-HMAC-SHA1-96' = Format-ADPrivHex ($set -band 0x8)
+						$row.'AES256-CTS-HMAC-SHA1-96' = Format-ADPrivHex ($set -band 0x10)
+					}
+					$row.'USE_DES_KEY_ONLY' = Format-ADPrivHex ($row.'userAccountControl' -band 0x200000)
+				}
+	}
+}
+
 function Test-ADPrivSidHistory($ctx){
 	New-ADPrivReport -ctx $ctx -name 'sidHistory' -title 'SID History' -dataSource {
 		$filter = (
@@ -1686,7 +1726,7 @@ function Test-ADPrivLaps($ctx){
 	$pwdSchemaAttrs = Get-ADObject @adConnectParams -SearchBase (Get-ADRootDSE @adConnectParams).SchemaNamingContext `
 		-Filter ("name -eq 'ms-LAPS-Password' -or name -eq 'ms-LAPS-PasswordExpirationTime'" `
 			+ " -or name -eq 'ms-Mcs-AdmPwd' -or name -eq 'ms-Mcs-AdmPwdExpirationTime'") `
-		-Properties SchemaIDGUID | Group-Object -AsHashTable -Property 'Name'
+		-Properties 'SchemaIDGUID' | Group-Object -AsHashTable -Property 'Name'
 		$lapsPwdAttr = $null
 		$admPwdAttr = $null
 	if($pwdSchemaAttrs){
@@ -1716,7 +1756,7 @@ function Test-ADPrivLaps($ctx){
 
 			$lapsEncPwdAttrAttr = Get-ADObject @adConnectParams `
 				-Identity "CN=ms-LAPS-Encrypted-Password-Attributes,CN=Extended-Rights,$((Get-ADRootDSE @adConnectParams).ConfigurationNamingContext)" `
-				-Properties rightsGuid
+				-Properties 'rightsGuid'
 
 			$lapsPwdAttrGuid = [guid]$lapsPwdAttr.SchemaIDGUID
 			$lapsEncPwdAttrAttrGuid = [guid]$lapsEncPwdAttrAttr.rightsGuid
@@ -1907,6 +1947,10 @@ function Invoke-ADPrivReports($ctx){
 
 	Test-ADPrivStalePasswords -ctx $ctx -filterDatePasswd $ctx.params.filterDatePassword
 
+	# Service Accounts Supported Encryption Types...
+
+	Test-ADPrivServiceAccountEncryptionTypes -ctx $ctx
+
 	# Users with PasswordNotRequired set...
 
 	New-ADPrivReport -ctx $ctx -name 'passwordNotRequired' -title 'Password Not Required' -dataSource {
@@ -1946,7 +1990,7 @@ function Invoke-ADPrivReports($ctx){
 		@(Get-ADUser @adConnectParams -Filter $filter -Properties $ctx.adProps.userIn) `
 			+ @(Get-ADComputer @adConnectParams -Filter $filter -Properties $ctx.adProps.compIn) `
 			| Sort-Object -Property 'lastLogonTimestamp' `
-			| ConvertTo-ADPrivRows -property $ctx.adProps.compOut
+			| ConvertTo-ADPrivRows -property $ctx.adProps.allOut
 	}
 
 	# Computers with unsupported operating systems...
