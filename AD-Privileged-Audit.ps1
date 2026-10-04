@@ -1,4 +1,4 @@
-# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2026-01-20
+# Mark A. Ziesemer, www.ziesemer.com - 2020-08-27, 2026-10-03
 # SPDX-FileCopyrightText: Copyright © 2020-2026, Mark A. Ziesemer
 # - https://github.com/ziesemer/ad-privileged-audit
 
@@ -36,7 +36,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-$version = '2026-01-20.1'
+$version = '2026-10-03'
 $warnings = [System.Collections.ArrayList]::new()
 $adConnectParams = @{}
 
@@ -642,6 +642,14 @@ function Initialize-ADPrivOSVersions(){
 					'EndOfServicing' = @{
 						1 = '2027-10-12'
 						2 = '2028-10-10'
+					}
+				}
+				26300 = @{
+					'Version' = '26H2'
+					'Availability' = '2026-09-29'
+					'EndOfServicing' = @{
+						1 = '2028-10-10'
+						2 = '2029-10-09'
 					}
 				}
 			}
@@ -1529,14 +1537,15 @@ function Test-ADPrivServiceAccountEncryptionTypes($ctx){
 				+ ' -or userAccountControl -band 0x200000' `
 				+ ')'
 		)
-		@(Get-ADUser @adConnectParams -Filter $filter -Properties ($ctx.adProps.userIn + 'msDS-SupportedEncryptionTypes')) `
-			+ @(Get-ADComputer @adConnectParams -Filter $filter -Properties ($ctx.adProps.compIn + 'msDS-SupportedEncryptionTypes')) `
+		$extraProps = @('msDS-SupportedEncryptionTypes', 'servicePrincipalName')
+		@(Get-ADUser @adConnectParams -Filter $filter -Properties ($ctx.adProps.userIn + $extraProps)) `
+			+ @(Get-ADComputer @adConnectParams -Filter $filter -Properties ($ctx.adProps.compIn + $extraProps)) `
 			| Sort-Object -Property @{Expression = {[int]$_.'Enabled'}; Descending = $true}, `
 				@{Expression = 'lastLogonTimestamp'; Descending = $true}, `
 				'Name' `
 			| ConvertTo-ADPrivRows -property (@('Name', `
 						'DES-CBC-CRC', 'DES-CBC-MD5', 'RC4-HMAC', 'AES128-CTS-HMAC-SHA1-96', 'AES256-CTS-HMAC-SHA1-96', 'msDS-SupportedEncryptionTypes', `
-						'USE_DES_KEY_ONLY', 'Enabled', 'lastLogonTimestamp', 'lastLogonTimestampDate', 'PasswordLastSet') `
+						'USE_DES_KEY_ONLY', 'Enabled', 'lastLogonTimestamp', 'lastLogonTimestampDate', 'PasswordLastSet', 'servicePrincipalName') `
 					+ $ctx.adProps.allOut | Select-Object -Unique) `
 				-scriptBlock {
 					param($row)
@@ -1550,6 +1559,7 @@ function Test-ADPrivServiceAccountEncryptionTypes($ctx){
 						$row.'AES256-CTS-HMAC-SHA1-96' = Format-ADPrivHex ($set -band 0x10)
 					}
 					$row.'USE_DES_KEY_ONLY' = Format-ADPrivHex ($row.'userAccountControl' -band 0x200000)
+					$row.'servicePrincipalName' = $row.'servicePrincipalName' -join '; '
 				}
 	}
 }
